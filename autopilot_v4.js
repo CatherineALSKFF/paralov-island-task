@@ -432,78 +432,20 @@ async function handleActiveRound(round) {
   // Build cross-round model
   const { model } = buildCrossRoundModel();
 
-  // ===== SUBMIT MANY VARIANTS =====
-  log('\n--- Submitting variants (server keeps best per round) ---');
+  // ===== SUBMIT VARIANTS =====
+  // CRITICAL: Model-based approach MUST be submitted LAST (final submission = what gets scored)
+  // VP is from intermediate timestep, NOT year 50. Use with low confidence only.
+  log('\n--- Submitting variants (model-based LAST = final) ---');
 
-  // VARIANT 1: Model-based (baseline)
-  log('\nV1: Model + VP D0 fusion + per-cell (original approach)');
-  for (const temp of [1.1, 1.15]) {
+  // Submit model-based with multiple temperatures — LAST ONE IS FINAL
+  for (const temp of [1.0, 1.2, 1.15, 1.1]) {
+    log(`\nModel + VP fusion, temp=${temp}`);
     const preds = modelWithVPFusion(inits, vpObs, model, temp);
     await submitAll(roundId, preds, `model_t${temp}`);
   }
 
-  // VARIANT 2: Pure VP at various confidence levels
-  const vpConfigs = [
-    { vpConf: 0.999, spread: 0.0002, name: 'vp999' },
-    { vpConf: 0.995, spread: 0.001, name: 'vp995' },
-    { vpConf: 0.99, spread: 0.002, name: 'vp99' },
-    { vpConf: 0.98, spread: 0.004, name: 'vp98' },
-    { vpConf: 0.95, spread: 0.01, name: 'vp95' },
-    { vpConf: 0.90, spread: 0.02, name: 'vp90' },
-    { vpConf: 0.80, spread: 0.04, name: 'vp80' },
-  ];
-
-  for (const cfg of vpConfigs) {
-    log(`\nV2: Pure VP ${cfg.name}`);
-    const preds = pureVPPrediction(inits, vpCells, cfg.vpConf, cfg.spread);
-    await submitAll(roundId, preds, cfg.name);
-  }
-
-  // VARIANT 3: Smart VP (model-informed spread)
-  for (const vpConf of [0.995, 0.99, 0.95, 0.90]) {
-    log(`\nV3: Smart VP ${vpConf}`);
-    const preds = smartVPPrediction(inits, vpCells, model, vpConf);
-    await submitAll(roundId, preds, `smart_vp${vpConf*100}`);
-  }
-
-  // VARIANT 4: Terrain-specific VP confidence
-  log('\nV4: Terrain-specific VP confidence');
-  {
-    const confMap = [0.999, 0.99, 0.95, 0.93, 0.99, 0.999]; // cls0-5
-    const preds = [];
-    for (let si = 0; si < SEEDS; si++) {
-      const modelPred = predictModel(inits[si], model, 1.15);
-      const pred = [];
-      for (let y = 0; y < H; y++) { pred[y] = [];
-        for (let x = 0; x < W; x++) {
-          const t = inits[si][y][x];
-          if (t === 10) { pred[y][x] = [1, 0, 0, 0, 0, 0]; continue; }
-          if (t === 5) { pred[y][x] = [0, 0, 0, 0, 0, 1]; continue; }
-          const vpKey = y + ',' + x;
-          if (vpCells[si][vpKey] !== undefined) {
-            const vpClass = vpCells[si][vpKey];
-            const conf = confMap[vpClass];
-            const p = new Array(C);
-            let otherSum = 0;
-            for (let c = 0; c < C; c++) if (c !== vpClass) otherSum += modelPred[y][x][c];
-            for (let c = 0; c < C; c++) {
-              if (c === vpClass) p[c] = conf;
-              else p[c] = otherSum > 0 ? (1 - conf) * modelPred[y][x][c] / otherSum : (1 - conf) / (C - 1);
-              p[c] = Math.max(p[c], 0.00005);
-            }
-            const sum = p.reduce((a, b) => a + b, 0);
-            for (let c = 0; c < C; c++) p[c] /= sum;
-            pred[y][x] = p;
-          } else { pred[y][x] = modelPred[y][x]; }
-        } }
-      preds.push(pred);
-    }
-    await submitAll(roundId, preds, 'terrain_specific');
-  }
-
-  log('\n=== ALL VARIANTS SUBMITTED ===');
-  log(`If VP=GT: expect ~97-99 score → ws=${(98 * weight).toFixed(2)}`);
-  log(`If VP≈replay: expect ~86-90 score → ws=${(88 * weight).toFixed(2)}`);
+  log('\n=== FINAL SUBMISSION: model_t1.1 (proven approach, ~86-90 score) ===');
+  log(`Expected: ~88 × ${weight.toFixed(4)} = ${(88 * weight).toFixed(2)} ws`);
 }
 
 async function handleWithReplays(roundId, rn, inits, weight) {
