@@ -1,0 +1,84 @@
+You are optimizing a terrain prediction algorithm for a simulation competition.
+
+TASK: Write a better predict() function. The function receives the initial 40x40 grid, settlement positions, per-round GT probability buckets, growth rates, and the test round number. It must return a 40x40x6 probability tensor.
+
+CURRENT BEST (avg LOO score: 70.3):
+
+const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
+
+function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
+  const K = config.K || 4;
+  const floor = config.FLOOR || 0.0001;
+  const targetGrowth = growthRates[String(testRound)] || 0.15;
+  const candidates = { ...growthRates }; delete candidates[String(testRound)];
+  const closestRounds = selectClosestRounds(candidates, targetGrowth, K);
+  const adaptiveModel = mergeBuckets(perRoundBuckets, closestRounds);
+  const allRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+  const allModel = mergeBuckets(perRoundBuckets, allRounds);
+  const settPos = new Set();
+  for (const s of settlements) settPos.add(s.y * W + s.x);
+  const pred = [];
+  for (let y = 0; y < H; y++) {
+    const row = [];
+    for (let x = 0; x < W; x++) {
+      const key = getFeatureKey(initGrid, settPos, y, x);
+      let prior = adaptiveModel[key] ? [...adaptiveModel[key]] : allModel[key] ? [...allModel[key]] : null;
+      if (!prior) {
+        const fb = key.slice(0, -1);
+        prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : [1/6,1/6,1/6,1/6,1/6,1/6];
+      }
+      const floored = prior.map(v => Math.max(v, floor));
+      const sum = floored.reduce((a, b) => a + b, 0);
+      row.push(floored.map(v => v / sum));
+    }
+    pred.push(row);
+  }
+  return pred;
+}
+module.exports = { predict };
+
+
+PER-ROUND SCORES:
+  R1: 87.2 (growth 18%)
+  R2: 88.5 (growth 21%)
+  R3: 72.9 (growth 0%)
+  R4: 94.6 (growth 10%)
+  R5: 79.3 (growth 14%)
+  R6: 80.3 (growth 27%)
+  R7: 61.2 (growth 19%)
+  R8: 92.6 (growth 3%)
+  R9: 84.9 (growth 15%)
+  R10: 84.3 (growth 1%)
+  R11: 84.2 (growth 30%)
+  R12: 44.6 (growth 19%)
+  R13: 4.5 (growth 11%)
+  R14: 5.8 (growth 28%)
+  R15: 89.2 (growth 0%)
+
+HISTORY OF ATTEMPTS:
+  baseline.js: avg=70.3 min=4.5 [baseline]
+  strategy_1.js: avg=65.1 min=7.4 [rejected]
+  strategy_2.js: avg=0.0 min=0.0 [error: Unexpected identifier 'at']
+  strategy_6.js: avg=68.1 min=6.7 [rejected]
+
+AVAILABLE UTILITIES (require('./shared')):
+- terrainToClass(code), getFeatureKey(grid, settPos, y, x)
+- mergeBuckets(perRoundBuckets, roundNums), selectClosestRounds(growthRates, targetRate, K)
+- H=40, W=40
+
+RULES:
+- Must export { predict }
+- predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) -> 40x40 array of 6-element probability vectors
+- Each cell's probabilities must sum to ~1.0 and be non-negative
+- EXCLUDE testRound from training data (LOO requirement)
+- You can access all per-round buckets: perRoundBuckets[roundNum][featureKey] = {count, sum:[6 floats]}
+- growthRates[roundNum] = float (0-0.35)
+
+IDEAS TO TRY:
+- Weight rounds by growth rate similarity (exponential decay) instead of uniform average
+- Richer feature keys (e.g. distance to nearest settlement instead of count in radius)
+- Separate models for different terrain types
+- Ensemble of multiple K values
+- Per-cell adaptive floor based on entropy
+
+Output ONLY the JavaScript code for the strategy file. No markdown, no explanation. Start with require('./shared').

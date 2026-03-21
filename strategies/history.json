@@ -1,0 +1,34 @@
+{
+  "bestFile": "baseline.js",
+  "bestScore": 70.28530519705723,
+  "history": [
+    {
+      "iter": 0,
+      "file": "baseline.js",
+      "avg": 70.28530519705723,
+      "min": 4.5247293502630965,
+      "status": "baseline"
+    },
+    {
+      "iter": 1,
+      "file": "strategy_1.js",
+      "avg": 65.10386890603233,
+      "min": 7.415596681371511,
+      "status": "rejected"
+    },
+    {
+      "iter": 2,
+      "file": "strategy_2.js",
+      "avg": 0,
+      "min": 0,
+      "status": "error: Unexpected identifier 'at'"
+    },
+    {
+      "iter": 6,
+      "file": "strategy_6.js",
+      "avg": 68.06808878294544,
+      "min": 6.749848485641185,
+      "status": "rejected"
+    }
+  ]
+}
