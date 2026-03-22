@@ -1,0 +1,218 @@
+[18:12:44] ╔══════════════════════════════════════════════╗
+[18:12:44] ║  AUTOPILOT V3 — REPLAY-FIRST STRATEGY       ║
+[18:12:44] ╚══════════════════════════════════════════════╝
+[18:12:45] 
+============================================================
+[18:12:45] HANDLING ACTIVE ROUND: R9 (id=2a341ace)
+[18:12:45] Weight: 1.5513
+[18:12:45] ============================================================
+[18:12:45] Loaded 5 initial states
+[18:12:45] 
+--- PHASE 1: Testing replay API on active round ---
+[18:12:46] Replay API returned null — not available for active round
+[18:12:46] 
+--- FEATURE MODEL PATH (r8_FINAL.js style) ---
+[18:12:46] Building cross-round model...
+[18:12:46] Training rounds: R1, R2, R4, R5, R6, R7, R8
+[18:12:46] Replays: R1=500, R2=500, R4=500, R5=500, R6=500, R7=500, R8=500
+[18:13:02] Cross-round model: 164 keys
+[18:13:02] Loaded 50 existing VP observations
+[18:13:03]   VP D0 fused: 87 keys
+[18:13:03] 
+Submitting: temp=1.1, D0-VP fusion, per-cell adaptive
+[18:13:04] Seed 0: OK
+[18:13:06] Seed 1: OK
+[18:13:06] Seed 2: OK
+[18:13:07] Seed 3: OK
+[18:13:09] Seed 4: OK
+[18:13:10] 
+Estimated: ~89 × 1.5513 = 138.07 ws
+[18:13:10] Collecting post-round data for R8...
+[18:13:10] Collecting post-round data for R7...
+[18:13:10] Collecting post-round data for R6...
+[18:13:10] Collecting post-round data for R5...
+[18:13:10] Collecting post-round data for R4...
+[18:13:10] Collecting post-round data for R3...
+[18:13:10] Collecting post-round data for R2...
+[18:13:10] Collecting post-round data for R1...
+[18:13:10] Status: active=[R9], completed=8, handled=9
+[18:13:40] Status: active=[R9], completed=8, handled=9
+[18:14:11] Status: active=[R9], completed=8, handled=9
+[18:14:42] Status: active=[R9], completed=8, handled=9
+[18:15:13] Status: active=[R9], completed=8, handled=9
+[18:15:43] Status: active=[R9], completed=8, handled=9
+[18:16:13] Status: active=[R9], completed=8, handled=9
+[18:16:43] Status: active=[R9], completed=8, handled=9
+[18:17:13] Status: active=[R9], completed=8, handled=9
+[18:17:43] Status: active=[R9], completed=8, handled=9
+[18:18:14] Status: active=[R9], completed=8, handled=9
+[18:18:47] Status: active=[R9], completed=8, handled=9
+[18:19:17] Status: active=[R9], completed=8, handled=9
+[18:19:49] Status: active=[R9], completed=8, handled=9
+[18:20:20] Status: active=[R9], completed=8, handled=9
+[18:20:51] Status: active=[R9], completed=8, handled=9
+[18:21:21] Status: active=[R9], completed=8, handled=9
+[18:21:51] Status: active=[R9], completed=8, handled=9
+[18:22:21] Status: active=[R9], completed=8, handled=9
+[18:22:51] Status: active=[R9], completed=8, handled=9
+[18:23:23] Status: active=[R9], completed=8, handled=9
+[18:23:54] Status: active=[R9], completed=8, handled=9
+[18:24:24] Status: active=[R9], completed=8, handled=9
+[18:24:54] Status: active=[R9], completed=8, handled=9
+[18:25:24] Status: active=[R9], completed=8, handled=9
+[18:25:58] Status: active=[R9], completed=8, handled=9
+[18:26:30] Status: active=[R9], completed=8, handled=9
+[18:27:00] Status: active=[R9], completed=8, handled=9
+[18:27:32] Status: active=[R9], completed=8, handled=9
+[18:28:03] Status: active=[R9], completed=8, handled=9
+[18:28:33] Status: active=[R9], completed=8, handled=9
+[18:29:04] Status: active=[R9], completed=8, handled=9
+[18:29:34] Status: active=[R9], completed=8, handled=9
+[18:30:04] Status: active=[R9], completed=8, handled=9
+[18:30:34] Status: active=[R9], completed=8, handled=9
+[18:31:07] Status: active=[R9], completed=8, handled=9
+[18:31:38] Status: active=[R9], completed=8, handled=9
+[18:32:08] Status: active=[R9], completed=8, handled=9
+[18:32:38] Status: active=[R9], completed=8, handled=9
+[18:33:09] Status: active=[R9], completed=8, handled=9
+[18:33:39] Status: active=[R9], completed=8, handled=9
+[18:34:11] Status: active=[R9], completed=8, handled=9
+[18:34:47] Status: active=[R9], completed=8, handled=9
+[18:35:20] Status: active=[R9], completed=8, handled=9
+[18:35:51] Status: active=[R9], completed=8, handled=9
+[18:36:21] Status: active=[R9], completed=8, handled=9
+[18:36:52] Status: active=[R9], completed=8, handled=9
+[18:37:24] Status: active=[R9], completed=8, handled=9
+[18:37:54] Status: active=[R9], completed=8, handled=9
+[18:38:24] Status: active=[R9], completed=8, handled=9
+[18:38:54] Status: active=[R9], completed=8, handled=9
+[18:39:25] Status: active=[R9], completed=8, handled=9
+[18:39:55] Status: active=[R9], completed=8, handled=9
+[18:40:25] Status: active=[R9], completed=8, handled=9
+[18:40:56] Status: active=[R9], completed=8, handled=9
+[18:41:27] Status: active=[R9], completed=8, handled=9
+[18:41:58] Status: active=[R9], completed=8, handled=9
+[18:42:29] Status: active=[R9], completed=8, handled=9
+[18:43:00] Status: active=[R9], completed=8, handled=9
+[18:43:33] Status: active=[R9], completed=8, handled=9
+[18:44:03] Status: active=[R9], completed=8, handled=9
+[18:44:34] Status: active=[R9], completed=8, handled=9
+[18:45:07] Status: active=[R9], completed=8, handled=9
+[18:45:37] Status: active=[R9], completed=8, handled=9
+[18:46:11] Status: active=[R9], completed=8, handled=9
+[18:46:42] Status: active=[R9], completed=8, handled=9
+[18:47:12] Status: active=[R9], completed=8, handled=9
+[18:47:42] Status: active=[R9], completed=8, handled=9
+[18:48:12] Status: active=[R9], completed=8, handled=9
+[18:48:42] Status: active=[R9], completed=8, handled=9
+[18:49:13] Status: active=[R9], completed=8, handled=9
+[18:49:49] Status: active=[R9], completed=8, handled=9
+[18:50:21] Status: active=[R9], completed=8, handled=9
+[18:50:51] Status: active=[R9], completed=8, handled=9
+[18:51:21] Status: active=[R9], completed=8, handled=9
+[18:51:51] Status: active=[R9], completed=8, handled=9
+[18:52:22] Status: active=[R9], completed=8, handled=9
+[18:52:53] Status: active=[R9], completed=8, handled=9
+[18:53:24] Status: active=[R9], completed=8, handled=9
+[18:53:54] Status: active=[R9], completed=8, handled=9
+[18:54:25] Status: active=[R9], completed=8, handled=9
+[18:54:57] Status: active=[R9], completed=8, handled=9
+[18:55:27] Status: active=[R9], completed=8, handled=9
+[18:55:57] Status: active=[R9], completed=8, handled=9
+[18:56:27] Status: active=[R9], completed=8, handled=9
+[18:56:57] Status: active=[R9], completed=8, handled=9
+[18:57:28] Status: active=[R9], completed=8, handled=9
+[18:58:00] Status: active=[R9], completed=8, handled=9
+[18:58:32] Status: active=[R9], completed=8, handled=9
+[18:59:02] Status: active=[R9], completed=8, handled=9
+[18:59:35] Status: active=[R9], completed=8, handled=9
+[19:00:08] Status: active=[R9], completed=8, handled=9
+[19:00:40] Status: active=[R9], completed=8, handled=9
+[19:01:13] Status: active=[R9], completed=8, handled=9
+[19:01:44] Status: active=[R9], completed=8, handled=9
+[19:02:21] Status: active=[R9], completed=8, handled=9
+[19:02:54] Status: active=[R9], completed=8, handled=9
+[19:03:25] Status: active=[R9], completed=8, handled=9
+[19:03:56] Status: active=[R9], completed=8, handled=9
+[19:04:28] Status: active=[R9], completed=8, handled=9
+[19:04:59] Status: active=[R9], completed=8, handled=9
+[19:05:29] Status: active=[R9], completed=8, handled=9
+[19:06:03] Status: active=[R9], completed=8, handled=9
+[19:06:36] Status: active=[R9], completed=8, handled=9
+[19:07:06] Status: active=[R9], completed=8, handled=9
+[19:07:36] Status: active=[R9], completed=8, handled=9
+[19:08:08] Status: active=[R9], completed=8, handled=9
+[19:08:40] Status: active=[R9], completed=8, handled=9
+[19:09:13] Status: active=[R9], completed=8, handled=9
+[19:09:45] Status: active=[R9], completed=8, handled=9
+[19:10:16] Status: active=[R9], completed=8, handled=9
+[19:10:47] Status: active=[R9], completed=8, handled=9
+[19:11:17] Status: active=[R9], completed=8, handled=9
+[19:11:51] Status: active=[R9], completed=8, handled=9
+[19:12:23] Status: active=[R9], completed=8, handled=9
+[19:12:54] Status: active=[R9], completed=8, handled=9
+[19:13:26] Status: active=[R9], completed=8, handled=9
+[19:13:57] Status: active=[R9], completed=8, handled=9
+[19:14:30] Status: active=[R9], completed=8, handled=9
+[19:15:00] Status: active=[R9], completed=8, handled=9
+[19:15:31] Status: active=[R9], completed=8, handled=9
+[19:16:01] Status: active=[R9], completed=8, handled=9
+[19:16:32] Status: active=[R9], completed=8, handled=9
+[19:17:03] Status: active=[R9], completed=8, handled=9
+[19:17:33] Status: active=[R9], completed=8, handled=9
+[19:18:04] Status: active=[R9], completed=8, handled=9
+[19:18:35] Status: active=[R9], completed=8, handled=9
+[19:19:05] Status: active=[R9], completed=8, handled=9
+[19:19:35] Status: active=[R9], completed=8, handled=9
+[19:20:06] Status: active=[R9], completed=8, handled=9
+[19:20:36] Status: active=[R9], completed=8, handled=9
+[19:21:08] Status: active=[R9], completed=8, handled=9
+[19:21:38] Status: active=[R9], completed=8, handled=9
+[19:22:08] Status: active=[R9], completed=8, handled=9
+[19:22:38] Status: active=[R9], completed=8, handled=9
+[19:23:08] Status: active=[R9], completed=8, handled=9
+[19:23:38] Status: active=[R9], completed=8, handled=9
+[19:24:09] Status: active=[R9], completed=8, handled=9
+[19:24:39] Status: active=[R9], completed=8, handled=9
+[19:25:09] Status: active=[R9], completed=8, handled=9
+[19:25:39] Status: active=[R9], completed=8, handled=9
+[19:26:09] Status: active=[R9], completed=8, handled=9
+[19:26:42] Status: active=[R9], completed=8, handled=9
+[19:27:12] Status: active=[R9], completed=8, handled=9
+[19:27:43] Status: active=[R9], completed=8, handled=9
+[19:28:13] Status: active=[R9], completed=8, handled=9
+[19:28:43] Status: active=[R9], completed=8, handled=9
+[19:29:13] Status: active=[R9], completed=8, handled=9
+[19:29:43] Status: active=[R9], completed=8, handled=9
+[19:30:13] Status: active=[R9], completed=8, handled=9
+[19:30:43] Status: active=[R9], completed=8, handled=9
+[19:31:16] Status: active=[R9], completed=8, handled=9
+[19:31:48] Status: active=[R9], completed=8, handled=9
+[19:32:18] Status: active=[R9], completed=8, handled=9
+[19:32:48] Status: active=[R9], completed=8, handled=9
+[19:33:18] Status: active=[R9], completed=8, handled=9
+[19:33:49] Status: active=[R9], completed=8, handled=9
+[19:34:19] Status: active=[R9], completed=8, handled=9
+[19:34:49] Status: active=[R9], completed=8, handled=9
+[19:35:19] Status: active=[R9], completed=8, handled=9
+[19:35:49] Status: active=[R9], completed=8, handled=9
+[19:36:19] Status: active=[R9], completed=8, handled=9
+[19:36:50] Status: active=[R9], completed=8, handled=9
+[19:37:20] Status: active=[R9], completed=8, handled=9
+[19:37:50] Status: active=[R9], completed=8, handled=9
+[19:38:20] Status: active=[R9], completed=8, handled=9
+[19:38:52] Status: active=[R9], completed=8, handled=9
+[19:39:22] Status: active=[R9], completed=8, handled=9
+[19:39:53] Status: active=[R9], completed=8, handled=9
+[19:40:23] Status: active=[R9], completed=8, handled=9
+[19:40:53] Status: active=[R9], completed=8, handled=9
+[19:41:23] Status: active=[R9], completed=8, handled=9
+[19:41:53] Status: active=[R9], completed=8, handled=9
+[19:42:23] Status: active=[R9], completed=8, handled=9
+[19:42:54] Status: active=[R9], completed=8, handled=9
+[19:43:24] Status: active=[R9], completed=8, handled=9
+[19:43:56] Status: active=[R9], completed=8, handled=9
+[19:44:26] Status: active=[R9], completed=8, handled=9
+[19:44:56] Status: active=[R9], completed=8, handled=9
+[19:45:27] Status: active=[R9], completed=8, handled=9
+[19:45:57] Status: active=[R9], completed=8, handled=9

@@ -1,0 +1,212 @@
+{
+  "bestConfig": {
+    "K": 4,
+    "FLOOR": 0.0001
+  },
+  "bestScore": 82.4006542593591,
+  "history": [
+    {
+      "iteration": 0,
+      "config": {
+        "K": 3,
+        "FLOOR": 0.001
+      },
+      "avg": 81.48486715156872,
+      "min": 61.447886287156415,
+      "status": "baseline"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 1
+      },
+      "avg": 75.26121500517739,
+      "min": 50.515363467167774,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 2
+      },
+      "avg": 77.10460936259383,
+      "min": 58.05563537384806,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 3
+      },
+      "avg": 81.48486715156872,
+      "min": 61.447886287156415,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 4
+      },
+      "avg": 81.98625686254096,
+      "min": 60.88147171681991,
+      "status": "improved"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 5
+      },
+      "avg": 80.88720129531501,
+      "min": 59.73208213542207,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 6
+      },
+      "avg": 80.10376993811478,
+      "min": 57.825365152198614,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 7
+      },
+      "avg": 80.01145112944955,
+      "min": 60.94412271955339,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 3,
+        "FLOOR": 0.0001
+      },
+      "avg": 81.89699729432334,
+      "min": 61.75822365369895,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 3,
+        "FLOOR": 0.005
+      },
+      "avg": 79.796144282729,
+      "min": 60.09368476795633,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 3,
+        "FLOOR": 0.01
+      },
+      "avg": 77.73599417463441,
+      "min": 58.45665760514165,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "improved"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 4,
+        "FLOOR": 0.001
+      },
+      "avg": 81.98625686254096,
+      "min": 60.88147171681991,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 4,
+        "FLOOR": 0.005
+      },
+      "avg": 80.25178802739278,
+      "min": 59.539715007971594,
+      "status": "rejected"
+    },
+    {
+      "iteration": "sweep",
+      "config": {
+        "K": 5,
+        "FLOOR": 0.0001
+      },
+      "avg": 81.29595278919248,
+      "min": 60.03376380957707,
+      "status": "rejected"
+    },
+    {
+      "iteration": 1,
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001,
+        "N_PRIOR": 10
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "rejected",
+      "notes": "R7 (61.4) is the worst outlier dragging avg down. Lower N_PRIOR from 15 to 10 to give more weight to VP observations over the model prior when VP data exists, which should help rounds where the model prediction is poor but VP data is available."
+    },
+    {
+      "iteration": 2,
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001,
+        "WEIGHT_BY_SIMILARITY": true
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "rejected",
+      "notes": "Instead of simple average of K closest rounds, weight each round's contribution by inverse distance in growth rate. Closer growth rates get exponentially more weight: weight_i = exp(-10 * |growth_target - growth_i|). This helps because R7 (61.4) drags down the average - it likely gets matched with dissimilar rounds. Weighted averaging lets the most similar rounds dominate."
+    },
+    {
+      "iteration": 3,
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001,
+        "EXCLUDE_DEATH": true
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "rejected",
+      "notes": "Exclude death rounds (R3, R10 with growth<0.03) from the training pool entirely rather than letting them dilute predictions. Death rounds have fundamentally different dynamics and hurt when averaged in, especially for growth rounds. R3 scores 75.4 which drags avg down - if it's being used as training data for other rounds it also hurts their predictions."
+    },
+    {
+      "iteration": 4,
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001,
+        "ADAPTIVE_K": true
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "rejected",
+      "notes": "Use adaptive K per cell based on feature bucket data density. If a feature bucket has data from fewer than K rounds, use all available. If it has data from more than K rounds, weight by both growth-rate similarity AND feature-bucket sample size. Specifically: for each candidate round, compute weight = 1/(1 + |growthRate_target - growthRate_round|) * log(1 + sampleCount_in_bucket). Then take top K by weight instead of just by growth-rate distance. This helps R7 (worst score at 61.4) where rare feature buckets may be getting poor estimates from growth-rate-similar rounds that happen to have few samples for those buckets."
+    },
+    {
+      "iteration": 5,
+      "config": {
+        "K": 4,
+        "FLOOR": 0.0001,
+        "RADIUS": 2
+      },
+      "avg": 82.4006542593591,
+      "min": 61.18895729568144,
+      "status": "rejected",
+      "notes": "Reduce settlement neighbor radius from 3 to 2. Radius 3 creates a 7x7 area (48 cells) which over-smooths — settlements 3 cells away have minimal influence on terrain outcomes. Radius 2 (5x5, 24 cells) creates tighter, more predictive feature buckets. Change the loop bounds in getFeatureKey from dy/dx=-3..3 to dy/dx=-2..2."
+    }
+  ]
+}

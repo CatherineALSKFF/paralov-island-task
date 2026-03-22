@@ -9,17 +9,37 @@ function getFeatureKey(grid, settPos, y, x) {
   const v = grid[y][x];
   if (v === 10) return 'O'; if (v === 5) return 'M';
   const t = v === 4 ? 'F' : (v === 1 || v === 2) ? 'S' : 'P';
+  let adj = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dy && !dx) continue; const ny = y+dy, nx = x+dx;
+    if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny*W+nx)) adj++;
+  }
   let nS = 0;
   for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
     if (!dy && !dx) continue; const ny = y+dy, nx = x+dx;
     if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny*W+nx)) nS++;
+  }
+  let between = false;
+  if (adj === 0 && nS >= 2) {
+    let hasN=false,hasS=false,hasE=false,hasW=false;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      if (!dy && !dx) continue; const ny = y+dy, nx = x+dx;
+      if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny*W+nx)) {
+        if (dy<0) hasN=true; if (dy>0) hasS=true; if (dx<0) hasW=true; if (dx>0) hasE=true;
+      }
+    }
+    between = (hasN && hasS) || (hasE && hasW);
   }
   let coast = false;
   for (const [dy,dx] of [[-1,0],[1,0],[0,-1],[0,1]]) {
     const ny = y+dy, nx = x+dx;
     if (ny >= 0 && ny < H && nx >= 0 && nx < W && grid[ny][nx] === 10) coast = true;
   }
-  return t + (nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3') + (coast ? 'c' : '');
+  const adjKey = adj > 0 ? 'a' + Math.min(adj, 3) : '';
+  const nKey = nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3';
+  const bKey = between ? 'b' : '';
+  const cKey = coast ? 'c' : '';
+  return t + adjKey + nKey + bKey + cKey;
 }
 function mergeBuckets(perRoundBuckets, roundNums) {
   const m = {};

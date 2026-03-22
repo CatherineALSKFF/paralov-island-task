@@ -33,7 +33,7 @@ const VP_GRID = [
 ]
 
 // ── Model building (mirrors solver_clean.js) ──
-const N_PRIOR = 15 // Bayesian prior weight (calibrated via replay analysis)
+const N_PRIOR = 12 // Bayesian prior weight (optimized: 15 was too conservative, 4 too aggressive)
 const FLOOR = 0.0001 // optimized from 0.001
 const K_NEAREST = 4 // optimized from 3
 
@@ -91,6 +91,38 @@ function estimateGrowthFromVP(
   return dynamicCount > 0 ? settCount / dynamicCount : 0.15
 }
 
+const SIGMA = 0.05 // gaussian width for growth-rate weighting
+
+// Weighted merge: all rounds contribute, weighted by growth rate similarity
+function weightedMergeBuckets(buckets: PerRoundBuckets, growthRates: GrowthRates, targetGrowth: number, excludeRound?: number): Record<string, number[]> {
+  const roundNums = Object.keys(buckets).map(Number).filter(n => n !== excludeRound)
+  let totalWeight = 0
+  const weights: Record<number, number> = {}
+  for (const rn of roundNums) {
+    const dist = Math.abs((growthRates[String(rn)] ?? 0.15) - targetGrowth)
+    const w = Math.exp(-dist * dist / (2 * SIGMA * SIGMA))
+    weights[rn] = w
+    totalWeight += w
+  }
+
+  const model: Record<string, { count: number; sum: number[] }> = {}
+  for (const rn of roundNums) {
+    const w = weights[rn] / totalWeight
+    const b = buckets[String(rn)]
+    if (!b) continue
+    for (const [k, v] of Object.entries(b)) {
+      if (!model[k]) model[k] = { count: 0, sum: [0, 0, 0, 0, 0, 0] }
+      const avg = v.sum.map(s => s / v.count)
+      model[k].count += w * v.count
+      for (let c = 0; c < 6; c++) model[k].sum[c] += w * avg[c] * v.count
+    }
+  }
+
+  const out: Record<string, number[]> = {}
+  for (const [k, v] of Object.entries(model)) out[k] = v.sum.map(s => s / v.count)
+  return out
+}
+
 // Select K closest rounds by growth rate (solver_clean.js logic)
 function selectClosestRounds(growthRates: GrowthRates, targetRate: number, K = 3): number[] {
   return Object.entries(growthRates)
@@ -102,6 +134,7 @@ function selectClosestRounds(growthRates: GrowthRates, targetRate: number, K = 3
 
 // Compute optimal query order across all seeds
 // Priority: maximize unobserved dynamic cells (near settlements) and spread across seeds
+// When all viewports are done, returns duplicate queries for highest-value viewports
 function computeQueryPlan(
   vpDone: Set<string>,
   allInitData: Map<number, { grid: number[][]; settlements: { y: number; x: number }[] }>,
@@ -109,13 +142,13 @@ function computeQueryPlan(
 ): { seed: number; x: number; y: number; score: number; reason: string }[] {
   const candidates: { seed: number; x: number; y: number; score: number; reason: string }[] = []
 
+  // Pass 1: unqueried viewports
   for (let seed = 0; seed < 5; seed++) {
     const init = allInitData.get(seed)
     if (!init?.settlements || !init?.grid) continue
     const settPos = new Set<number>()
     for (const s of init.settlements) settPos.add(s.y * 40 + s.x)
 
-    // Count how many viewports this seed already has
     const seedDone = VP_GRID.filter(({ x, y }) => vpDone.has(`s${seed}_${x}_${y}`)).length
 
     for (const vp of VP_GRID) {
@@ -153,6 +186,41 @@ function computeQueryPlan(
     }
   }
 
+  // Pass 2: if all viewports done but budget remains, add duplicate queries
+  // on the most dynamic viewports (2nd observation averages noise)
+  if (candidates.length < budget) {
+    for (let seed = 0; seed < 5; seed++) {
+      const init = allInitData.get(seed)
+      if (!init?.settlements || !init?.grid) continue
+      const settPos = new Set<number>()
+      for (const s of init.settlements) settPos.add(s.y * 40 + s.x)
+
+      for (const vp of VP_GRID) {
+        // Only consider already-queried viewports for duplicates
+        if (!vpDone.has(`s${seed}_${vp.x}_${vp.y}`)) continue
+
+        let dynamicCells = 0
+        for (let vy = 0; vy < 15; vy++) for (let vx = 0; vx < 15; vx++) {
+          const gy = vp.y + vy, gx = vp.x + vx
+          if (gy >= 40 || gx >= 40) continue
+          const terrain = init.grid[gy][gx]
+          if (terrain === 10 || terrain === 5) continue
+          let near = false
+          for (let dy = -3; dy <= 3 && !near; dy++)
+            for (let dx = -3; dx <= 3 && !near; dx++) {
+              const ny = gy + dy, nx = gx + dx
+              if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && settPos.has(ny * 40 + nx)) near = true
+            }
+          if (near) dynamicCells++
+        }
+
+        // Lower score than first-pass (duplicates less valuable than new viewports)
+        const score = dynamicCells
+        candidates.push({ seed, x: vp.x, y: vp.y, score, reason: `2nd observation (${dynamicCells} dynamic cells)` })
+      }
+    }
+  }
+
   return candidates.sort((a, b) => b.score - a.score).slice(0, budget)
 }
 
@@ -163,11 +231,57 @@ function getFeatureKey(grid: number[][], sp: Set<number>, y: number, x: number):
   const v = grid[y][x]
   if (v === 10) return 'O'; if (v === 5) return 'M'
   const t = v === 4 ? 'F' : (v === 1 || v === 2) ? 'S' : 'P'
+  // Adjacent settlements (radius 1)
+  let adj = 0
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dy && !dx) continue; const ny = y+dy, nx = x+dx
+    if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && sp.has(ny*40+nx)) adj++
+  }
+  // Nearby settlements (radius 3)
   let nS = 0
-  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dy && !dx) continue; const ny = y+dy, nx = x+dx; if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && sp.has(ny*40+nx)) nS++ }
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    if (!dy && !dx) continue; const ny = y+dy, nx = x+dx
+    if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && sp.has(ny*40+nx)) nS++
+  }
+  // Between settlements (opposing quadrants)
+  let between = false
+  if (adj === 0 && nS >= 2) {
+    let hasN = false, hasS = false, hasE = false, hasW = false
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      if (!dy && !dx) continue; const ny = y+dy, nx = x+dx
+      if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && sp.has(ny*40+nx)) {
+        if (dy < 0) hasN = true; if (dy > 0) hasS = true; if (dx < 0) hasW = true; if (dx > 0) hasE = true
+      }
+    }
+    between = (hasN && hasS) || (hasE && hasW)
+  }
+  // Coastal
   let coast = false
   for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]]) { const ny = y+dy, nx = x+dx; if (ny >= 0 && ny < 40 && nx >= 0 && nx < 40 && grid[ny][nx] === 10) coast = true }
-  return t + (nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3') + (coast ? 'c' : '')
+  const adjKey = adj > 0 ? 'a' + Math.min(adj, 3) : ''
+  const nKey = nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3'
+  return t + adjKey + nKey + (between ? 'b' : '') + (coast ? 'c' : '')
+}
+
+// Generate fallback keys by progressively stripping features
+// e.g. Fa12bc -> Fa12b -> Fa12 -> Fa11 -> F2 -> F1 -> F0
+function generateFallbacks(key: string): string[] {
+  if (key === 'O' || key === 'M') return []
+  const fbs: string[] = []
+  // Strip coastal
+  if (key.endsWith('c')) fbs.push(key.slice(0, -1))
+  // Strip between
+  const noC = key.replace(/c$/, '')
+  if (noC.endsWith('b')) fbs.push(noC.slice(0, -1))
+  // Strip to just terrain + nearby count (drop adjacency)
+  const t = key[0]
+  const nMatch = key.match(/(\d)[bc]*$/)
+  if (nMatch) {
+    fbs.push(t + nMatch[1])
+    // Try adjacent counts
+    for (let n = parseInt(nMatch[1]); n >= 0; n--) fbs.push(t + n)
+  }
+  return [...new Set(fbs)]
 }
 
 function buildPrediction(model: Record<string, number[]>, grid: number[][], sett: { y: number; x: number }[]) {
@@ -224,6 +338,7 @@ export default function App() {
   const [selectedRound, setSelectedRound] = useState('17')
   const [selectedSeed, setSelectedSeed] = useState(0)
   const [token, setToken] = useState(() => localStorage.getItem('jwt') || '')
+  const [showTokenInput, setShowTokenInput] = useState(false)
   const [activeTab, setActiveTab] = useState('play')
   const [countdown, setCountdown] = useState('')
   const [log, setLog] = useState<string[]>([])
@@ -333,6 +448,19 @@ export default function App() {
   // VP observations for the currently selected seed (convenience)
   const vpObservations = allVpData?.[selectedSeed] ?? null
 
+  // What we've actually submitted for this round
+  const { data: submittedPreds } = useQuery({
+    queryKey: ['submitted-preds', roundId],
+    queryFn: async () => {
+      if (!roundId || !token) return null
+      const resp = await fetch(`/api/my-predictions/${roundId}`, { headers: authHeaders(token) })
+      if (!resp.ok) return null
+      return resp.json()
+    },
+    enabled: !!roundId && !!token,
+    refetchInterval: 15000,
+  })
+
   const { data: gtData } = useQuery({
     queryKey: ['gt-data', roundId, selectedSeed],
     queryFn: () => roundId ? fetcher(`/api/gt/${roundId.substring(0, 8)}/${selectedSeed}`).then(d => d?.ground_truth ?? null) : null,
@@ -355,24 +483,30 @@ export default function App() {
     // Step 2: Select K=3 closest rounds by growth rate
     const closestRounds = selectClosestRounds(growthRates, estimatedGrowth, K_NEAREST)
 
-    // Step 3: Build adaptive model + all-rounds fallback
-    const adaptiveModel = mergeBuckets(rawBuckets, closestRounds)
+    // Step 3: Build weighted model (all rounds, gaussian-weighted by growth similarity)
+    const adaptiveModel = weightedMergeBuckets(rawBuckets, growthRates, estimatedGrowth)
     const allModel = mergeBuckets(rawBuckets, Object.keys(rawBuckets).map(Number))
 
-    // Step 4: Assemble VP grid
-    let vpGrid: (number | null)[][] | null = null
+    // Step 4: Assemble VP observation counts (supports multiple observations per cell)
+    let vpCounts: number[][][] | null = null // [y][x][6 classes] = count of observations per class
+    let vpTotalObs: number[][] | null = null // [y][x] = total observations at this cell
     if (vpObservations && vpObservations.length > 0) {
-      vpGrid = Array.from({ length: 40 }, () => Array(40).fill(null))
+      vpCounts = Array.from({ length: 40 }, () => Array.from({ length: 40 }, () => [0, 0, 0, 0, 0, 0]))
+      vpTotalObs = Array.from({ length: 40 }, () => Array(40).fill(0))
       for (const vp of vpObservations) {
         for (let vy = 0; vy < vp.grid.length; vy++)
           for (let vx = 0; vx < vp.grid[vy].length; vx++) {
             const gy = vp.y + vy, gx = vp.x + vx
-            if (gy < 40 && gx < 40) vpGrid![gy][gx] = vp.grid[vy][vx]
+            if (gy < 40 && gx < 40) {
+              const cls = terrainToClass(vp.grid[vy][vx])
+              vpCounts![gy][gx][cls]++
+              vpTotalObs![gy][gx]++
+            }
           }
       }
     }
 
-    // Step 5: Generate prediction with Bayesian VP update
+    // Step 5: Generate prediction with multi-observation Bayesian VP update
     const sp = new Set<number>()
     for (const s of initData.settlements) sp.add(s.y * 40 + s.x)
     const pred = Array.from({ length: 40 }, () => Array.from({ length: 40 }, () => [0, 0, 0, 0, 0, 0]))
@@ -381,14 +515,20 @@ export default function App() {
       const key = getFeatureKey(initData.grid, sp, y, x)
       let prior = adaptiveModel[key] ? [...adaptiveModel[key]] : allModel[key] ? [...allModel[key]] : null
       if (!prior) {
-        const fb = key.slice(0, -1)
-        prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
+        // Progressive fallback: strip coast, then between, then adjacency detail
+        const fallbacks = generateFallbacks(key)
+        for (const fb of fallbacks) {
+          prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : null
+          if (prior) break
+        }
+        if (!prior) prior = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
       }
 
-      if (vpGrid && vpGrid[y][x] != null) {
-        const obsClass = terrainToClass(vpGrid[y][x]!)
-        const q = prior.map((p, c) => N_PRIOR * p + (c === obsClass ? 1 : 0))
-        const total = N_PRIOR + 1
+      if (vpCounts && vpTotalObs && vpTotalObs[y][x] > 0) {
+        // Dirichlet-multinomial update: posterior = (N_PRIOR * prior + observation_counts) / (N_PRIOR + total_obs)
+        const nObs = vpTotalObs[y][x]
+        const q = prior.map((p, c) => N_PRIOR * p + vpCounts![y][x][c])
+        const total = N_PRIOR + nObs
         const floored = q.map(v => Math.max(v / total, FLOOR))
         const sum = floored.reduce((a, b) => a + b, 0)
         pred[y][x] = floored.map(v => v / sum)
@@ -544,13 +684,25 @@ export default function App() {
     autopilotRef.current = true
     setStepLog([])
 
+    // Check budget before doing anything
+    const myRoundsResp = await fetch('/api/ainm/my-rounds', { headers: authHeaders(token) })
+    const myRoundsData = await myRoundsResp.json()
+    const thisRound = myRoundsData?.find?.((r: { round_id: string }) => r.round_id === roundId)
+    const queriesBudget = (thisRound?.queries_max ?? 50) - (thisRound?.queries_used ?? 0)
+    const alreadySubmitted = (thisRound?.seeds_submitted ?? 0) > 0
+
     // Phase 0: Immediate model-only submission (safety net)
     setAutopilotPhase('Submitting model-only baseline...')
     await submitAllSeeds(roundId, 'model-only baseline')
 
+    if (queriesBudget <= 0) {
+      setStepLog(l => [...l, { label: 'No query budget remaining', status: 'done', detail: 'Skipping to monitoring phase' }])
+    }
+
     // Phase 1: First pass - 1 query per seed for growth estimation
-    setAutopilotPhase('Phase 1: Growth estimation (1 query per seed)...')
     const currentDone = new Set(vpDone)
+    if (queriesBudget > 0) {
+    setAutopilotPhase('Phase 1: Growth estimation (1 query per seed)...')
     for (let seed = 0; seed < 5; seed++) {
       if (!autopilotRef.current) break
       const plan = computeQueryPlan(currentDone, allSeedsInit, 1)
@@ -591,6 +743,8 @@ export default function App() {
       }
     }
 
+    } // end queriesBudget > 0
+
     // Phase 3: Submit with all VP data
     if (autopilotRef.current) {
       setAutopilotPhase('Submitting with all VP data...')
@@ -601,64 +755,48 @@ export default function App() {
       await submitAllSeeds(roundId, 'VP-informed')
     }
 
-    // Phase 4: Optimization loop - Claude iterates on the algorithm until round closes
+    // Phase 4: Wait for round to close, resubmit periodically
     if (autopilotRef.current) {
-      setAutopilotPhase('Starting optimization loop...')
-
-      // Start the server-side optimizer
-      await fetch('/api/optimizer/start', { method: 'POST' })
-      setStepLog(l => [...l, { label: 'Optimizer started', status: 'done', detail: 'Claude iterating on predict()' }])
-
-      let lastBestScore = 0
-      let iterCount = 0
+      setAutopilotPhase('Monitoring round, will resubmit before close...')
+      let lastSubmitTime = Date.now()
 
       while (autopilotRef.current) {
         // Check if round is still active
-        const roundsResp = await fetch('/api/ainm/rounds', { headers: authHeaders(token) })
-        const rounds = await roundsResp.json()
-        const still = rounds?.find?.((r: { id: string; status: string }) => r.id === roundId && r.status === 'active')
-        if (!still) {
-          setAutopilotPhase('Round closed')
-          setStepLog(l => [...l, { label: 'Round closed', status: 'done', detail: 'Stopping optimizer' }])
-          break
+        try {
+          const roundsResp = await fetch('/api/ainm/rounds', { headers: authHeaders(token) })
+          const rounds = await roundsResp.json()
+          const still = rounds?.find?.((r: { id: string; status: string }) => r.id === roundId && r.status === 'active')
+          if (!still) {
+            setAutopilotPhase('Round closed')
+            setStepLog(l => [...l, { label: 'Round closed', status: 'done' }])
+            break
+          }
+
+          // Calculate time remaining
+          const closesAt = still.closes_at ? new Date(still.closes_at).getTime() : 0
+          const remaining = closesAt - Date.now()
+          const minsLeft = Math.floor(remaining / 60000)
+          setAutopilotPhase(`Waiting... ${minsLeft}m remaining`)
+
+          // Resubmit every 5 minutes, and once more when <2 min left
+          const timeSinceSubmit = Date.now() - lastSubmitTime
+          if (timeSinceSubmit > 5 * 60 * 1000 || (remaining < 2 * 60 * 1000 && timeSinceSubmit > 30 * 1000)) {
+            setAutopilotPhase(`Resubmitting (${minsLeft}m left)...`)
+            qc.invalidateQueries({ queryKey: ['vp-observations'] })
+            await new Promise(r => setTimeout(r, 500))
+            await submitAllSeeds(roundId, `${minsLeft}m left`)
+            lastSubmitTime = Date.now()
+          }
+        } catch (e) {
+          setStepLog(l => [...l, { label: 'Round check failed', status: 'error', detail: String(e) }])
         }
 
-        // Check optimizer progress
-        const statusResp = await fetch('/api/optimizer/status')
-        const status = await statusResp.json()
-        iterCount = status.best?.iterations ?? 0
-
-        if (status.best && status.best.score > lastBestScore) {
-          lastBestScore = status.best.score
-          setAutopilotPhase(`Improvement found! Score: ${status.best.score.toFixed(1)} (iter ${iterCount}). Resubmitting...`)
-          setStepLog(l => [...l, { label: `Optimizer improved: ${status.best.score.toFixed(1)}`, status: 'done', detail: `${status.best.file} (iter ${iterCount})` }])
-
-          // TODO: load the new strategy and resubmit
-          // For now, resubmit with current frontend model (optimizer changes are server-side)
-          await submitAllSeeds(roundId, `optimized iter ${iterCount}`)
-        } else {
-          setAutopilotPhase(`Optimizing... iter ${iterCount}, best: ${status.best?.score?.toFixed(1) ?? '-'} (${status.status})`)
-        }
-
-        // If optimizer finished, stop
-        if (status.status === 'done' || status.status === 'error') {
-          setStepLog(l => [...l, { label: `Optimizer ${status.status}`, status: status.status === 'done' ? 'done' : 'error', detail: `${iterCount} iterations` }])
-          break
-        }
-
-        await new Promise(r => setTimeout(r, 10000)) // check every 10s
-      }
-
-      // Stop optimizer if we're cancelling
-      if (!autopilotRef.current) {
-        await fetch('/api/optimizer/stop', { method: 'POST' })
+        await new Promise(r => setTimeout(r, 15000))
       }
 
       // Final submission
-      if (autopilotRef.current) {
-        setAutopilotPhase('Final submission...')
-        await submitAllSeeds(roundId, 'FINAL')
-      }
+      setAutopilotPhase('Final submission...')
+      await submitAllSeeds(roundId, 'FINAL')
     }
 
     setAutopilotPhase('Complete')
@@ -684,18 +822,24 @@ export default function App() {
     }
 
     const closestRounds = selectClosestRounds(growthRates, growth, K_NEAREST)
-    const adaptiveModel = mergeBuckets(rawBuckets, closestRounds)
+    const adaptiveModel = weightedMergeBuckets(rawBuckets, growthRates, growth)
     const allModel = mergeBuckets(rawBuckets, Object.keys(rawBuckets).map(Number))
 
-    // Assemble VP grid for this seed
-    let vpGrid: (number | null)[][] | null = null
+    // Assemble VP observation counts for this seed
+    let vpCounts: number[][][] | null = null
+    let vpTotalObs: number[][] | null = null
     if (seedVP && seedVP.length > 0) {
-      vpGrid = Array.from({ length: 40 }, () => Array(40).fill(null))
+      vpCounts = Array.from({ length: 40 }, () => Array.from({ length: 40 }, () => [0, 0, 0, 0, 0, 0]))
+      vpTotalObs = Array.from({ length: 40 }, () => Array(40).fill(0))
       for (const vp of seedVP) {
         for (let vy = 0; vy < vp.grid.length; vy++)
           for (let vx = 0; vx < vp.grid[vy].length; vx++) {
             const gy = vp.y + vy, gx = vp.x + vx
-            if (gy < 40 && gx < 40) vpGrid![gy][gx] = vp.grid[vy][vx]
+            if (gy < 40 && gx < 40) {
+              const cls = terrainToClass(vp.grid[vy][vx])
+              vpCounts![gy][gx][cls]++
+              vpTotalObs![gy][gx]++
+            }
           }
       }
     }
@@ -708,13 +852,18 @@ export default function App() {
       const key = getFeatureKey(seedInit.grid, sp, y, x)
       let prior = adaptiveModel[key] ? [...adaptiveModel[key]] : allModel[key] ? [...allModel[key]] : null
       if (!prior) {
-        const fb = key.slice(0, -1)
-        prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
+        // Progressive fallback: strip coast, then between, then adjacency detail
+        const fallbacks = generateFallbacks(key)
+        for (const fb of fallbacks) {
+          prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : null
+          if (prior) break
+        }
+        if (!prior) prior = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
       }
-      if (vpGrid && vpGrid[y][x] != null) {
-        const obsClass = terrainToClass(vpGrid[y][x]!)
-        const q = prior.map((p, c) => N_PRIOR * p + (c === obsClass ? 1 : 0))
-        const total = N_PRIOR + 1
+      if (vpCounts && vpTotalObs && vpTotalObs[y][x] > 0) {
+        const nObs = vpTotalObs[y][x]
+        const q = prior.map((p, c) => N_PRIOR * p + vpCounts![y][x][c])
+        const total = N_PRIOR + nObs
         const floored = q.map(v => Math.max(v / total, FLOOR))
         const sum = floored.reduce((a, b) => a + b, 0)
         pred[y][x] = floored.map(v => v / sum)
@@ -742,10 +891,22 @@ export default function App() {
             <div className="flex items-center gap-1 text-[10px] font-mono text-amber-500/80 bg-amber-500/5 border border-amber-500/20 rounded px-2 py-0.5"><Shield className="w-3 h-3" />read-only proxy</div>
             {countdown && <div className="text-[11px] font-mono text-zinc-400 bg-zinc-800/50 rounded px-2 py-0.5"><Clock className="w-3 h-3 inline mr-1" />{countdown}</div>}
             {activeRound && <div className="text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-2 py-0.5">R{activeRound.round_number} active</div>}
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] font-mono text-zinc-500" onClick={() => setShowTokenInput(!showTokenInput)}>Token</Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => qc.invalidateQueries()}><RefreshCw className="w-3.5 h-3.5" /></Button>
           </div>
         </div>
       </div>
+
+      {showTokenInput && (
+        <div className="max-w-[1600px] mx-auto px-4 pt-2">
+          <div className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded px-3 py-2">
+            <span className="text-[10px] text-zinc-500 shrink-0">JWT:</span>
+            <input type="text" defaultValue={token} placeholder="Paste token here, press Enter" className="flex-1 bg-transparent border-none text-xs font-mono text-zinc-300 outline-none"
+              onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) { localStorage.setItem('jwt', v); setToken(v); setShowTokenInput(false); qc.invalidateQueries() } } }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="max-w-[1600px] mx-auto p-4 space-y-4">
         {!token && (
@@ -772,7 +933,7 @@ export default function App() {
               <div className="flex items-center gap-3 flex-wrap">
                 <Select value={selectedRound} onValueChange={setSelectedRound}>
                   <SelectTrigger className="w-32 h-8 text-xs bg-zinc-900 border-zinc-800"><SelectValue /></SelectTrigger>
-                  <SelectContent>{Array.from({ length: 20 }, (_, i) => <SelectItem key={i+1} value={String(i+1)}>Round {i+1}</SelectItem>)}</SelectContent>
+                  <SelectContent>{Array.from({ length: 30 }, (_, i) => <SelectItem key={i+1} value={String(i+1)}>Round {i+1}</SelectItem>)}</SelectContent>
                 </Select>
                 <div className="flex gap-0.5">
                   {[0,1,2,3,4].map(s => <Button key={s} variant={selectedSeed === s ? 'default' : 'ghost'} size="sm" className="font-mono w-8 h-8 text-xs px-0" onClick={() => setSelectedSeed(s)}>S{s}</Button>)}
@@ -811,6 +972,9 @@ export default function App() {
 
               {/* Right panel */}
               <div className="space-y-3">
+                {/* Live optimizer status - always visible */}
+                <LiveOptimizerStatus />
+
                 {/* VP query status */}
                 {activeRound && (
                   <div className="space-y-2">
@@ -824,6 +988,33 @@ export default function App() {
                       })}
                     </div>
                     <div className="text-[9px] text-zinc-600">{VP_GRID.filter(({ x, y }) => vpDone.has(`s${selectedSeed}_${x}_${y}`)).length}/9 viewports observed</div>
+                  </div>
+                )}
+
+                {/* Submitted prediction status */}
+                {submittedPreds && Array.isArray(submittedPreds) && submittedPreds.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono text-zinc-500 uppercase">Submitted Predictions</div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[0,1,2,3,4].map(s => {
+                        const sp = submittedPreds.find((p: { seed_index: number }) => p.seed_index === s)
+                        return (
+                          <div key={s} className={`text-center py-1 rounded border text-[10px] font-mono ${sp ? 'border-green-500/30 bg-green-500/5' : 'border-zinc-800/30'} ${selectedSeed === s ? 'ring-1 ring-zinc-500' : ''}`}>
+                            <div className="text-[8px] text-zinc-600">S{s}</div>
+                            {sp ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 text-green-500 mx-auto" />
+                                <div className="text-[8px] text-zinc-600 mt-0.5">
+                                  {sp.submitted_at ? new Date(sp.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-zinc-600 text-[9px]">none</div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -883,6 +1074,28 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {/* Submitted vs Current comparison */}
+            {submittedPreds && Array.isArray(submittedPreds) && (() => {
+              const sp = submittedPreds.find((p: { seed_index: number }) => p.seed_index === selectedSeed)
+              if (!sp?.argmax_grid) return null
+              return (
+                <div className="flex gap-4 items-start">
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                      Last Submitted (S{selectedSeed})
+                      {sp.submitted_at && <span className="text-zinc-600 ml-2">{new Date(sp.submitted_at).toLocaleTimeString()}</span>}
+                    </div>
+                    <MapCanvas data={sp.argmax_grid} mode="initial" size={300} />
+                    {sp.confidence_grid && (
+                      <div className="text-[10px] font-mono text-zinc-600">
+                        Avg confidence: {(sp.confidence_grid.flat().reduce((a: number, b: number) => a + b, 0) / sp.confidence_grid.flat().length).toFixed(3)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Legend */}
             <div className="flex gap-3">
@@ -1055,6 +1268,28 @@ export default function App() {
             <OptimizerPanel />
           </TabsContent>
         </Tabs>
+      </div>
+    </div>
+  )
+}
+
+function LiveOptimizerStatus() {
+  const { data } = useQuery({
+    queryKey: ['live-optimizer-status'],
+    queryFn: () => fetch('/api/live-optimizer/status').then(r => r.json()),
+    refetchInterval: 5000,
+  })
+  if (!data || data.status === 'not running') return null
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-mono text-emerald-400 uppercase flex items-center gap-1">
+        <RefreshCw className="w-3 h-3 animate-spin" /> Live Optimizer
+      </div>
+      <div className="bg-zinc-900/50 border border-zinc-800/30 rounded p-2 text-[10px] font-mono space-y-0.5">
+        <div className="text-zinc-300">Iter {data.iteration} | {data.remaining} left</div>
+        <div className="text-zinc-400">sigma={data.bestConfig?.sigma} nPrior={data.bestConfig?.nPrior} floor={data.bestConfig?.floor}</div>
+        <div className="text-zinc-400">VP score: {data.bestScore?.toFixed(1)} | {data.vpCount} viewports</div>
+        <div className="text-zinc-600">{data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString() : ''}</div>
       </div>
     </div>
   )

@@ -1,33 +1,26 @@
 {
   "bestFile": "baseline.js",
-  "bestScore": 70.28530519705723,
+  "bestScore": 81.96353082416165,
   "history": [
     {
       "iter": 0,
       "file": "baseline.js",
-      "avg": 70.28530519705723,
-      "min": 4.5247293502630965,
+      "avg": 81.96353082416165,
+      "min": 45.41340504619867,
       "status": "baseline"
     },
     {
-      "iter": 1,
-      "file": "strategy_1.js",
-      "avg": 65.10386890603233,
-      "min": 7.415596681371511,
-      "status": "rejected"
-    },
-    {
-      "iter": 2,
-      "file": "strategy_2.js",
+      "iter": 4,
+      "file": "strategy_4.js",
       "avg": 0,
       "min": 0,
-      "status": "error: Unexpected identifier 'at'"
+      "status": "error: Unexpected identifier 'changes'"
     },
     {
-      "iter": 6,
-      "file": "strategy_6.js",
-      "avg": 68.06808878294544,
-      "min": 6.749848485641185,
+      "iter": 10,
+      "file": "strategy_10.js",
+      "avg": 78.35935389829892,
+      "min": 43.87231242153538,
       "status": "rejected"
     }
   ]

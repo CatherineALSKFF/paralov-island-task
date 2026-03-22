@@ -1,0 +1,7 @@
+=== R9 ULTIMATE OPTIMIZER ===
+Time: 2026-03-20T18:59:53.017Z
+Training rounds: R1, R2, R3, R4, R5, R6, R7, R8
+Replays: R1=500, R2=500, R3=500, R4=500, R5=500, R6=500, R7=558, R8=1000
+
+=== PHASE 1: LOO PARAMETER SWEEP ===
+Testing 16 model configs x 7 temps = 112 total

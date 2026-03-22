@@ -1,0 +1,150 @@
+const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
+
+function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
+  const sigma = config.sigma || 0.05;
+  const floor = config.FLOOR || 0.0001;
+  const regWeight = config.regWeight || 0.1;
+  const linWeight = config.linWeight || 0.3; // blend linear model vs weighted mean
+
+  const targetGrowth = growthRates[String(testRound)] || 0.15;
+
+  const settPos = new Set();
+  for (const s of settlements) settPos.add(s.y * W + s.x);
+
+  const nearestDist = Array.from({ length: H }, () => Array(W).fill(99));
+  for (const s of settlements) {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const d = Math.max(Math.abs(s.y - y), Math.abs(s.x - x));
+        if (d < nearestDist[y][x]) nearestDist[y][x] = d;
+      }
+    }
+  }
+
+  function getEnhancedKey(y, x) {
+    const coarseKey = getFeatureKey(initGrid, settPos, y, x);
+    if (coarseKey === 'O' || coarseKey === 'M') return coarseKey;
+    if (coarseKey[0] === 'S') return coarseKey;
+    const nKey = coarseKey[1];
+    const minDist = nearestDist[y][x];
+    if (nKey === '0') return coarseKey + (minDist === 4 ? 'n' : minDist <= 8 ? 'm' : 'f');
+    if (nKey === '1') {
+      if (minDist === 1) return coarseKey + 'a';
+      if (minDist === 2) return coarseKey + 'b';
+    }
+    return coarseKey;
+  }
+
+  const allRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+
+  // Gaussian weighted mean model
+  const roundWeights = {};
+  let tw = 0;
+  for (const rn of allRounds) {
+    const dist = Math.abs((growthRates[String(rn)] || 0.15) - targetGrowth);
+    roundWeights[rn] = Math.exp(-dist * dist / (2 * sigma * sigma));
+    tw += roundWeights[rn];
+  }
+  for (const rn of allRounds) roundWeights[rn] /= tw;
+
+  const meanModel = {};
+  const perRoundAvg = {};
+  for (const rn of allRounds) {
+    const b = perRoundBuckets[String(rn)];
+    if (!b) continue;
+    perRoundAvg[rn] = {};
+    for (const [key, val] of Object.entries(b)) {
+      const avg = val.sum.map(v => v / val.count);
+      perRoundAvg[rn][key] = avg;
+      if (!meanModel[key]) meanModel[key] = [0, 0, 0, 0, 0, 0];
+      for (let c = 0; c < 6; c++) meanModel[key][c] += roundWeights[rn] * avg[c];
+    }
+  }
+
+  // Linear regression model: for each key and class, fit p = a + b * growth
+  const linModel = {};
+  for (const key of Object.keys(meanModel)) {
+    const points = [];
+    for (const rn of allRounds) {
+      if (perRoundAvg[rn] && perRoundAvg[rn][key]) {
+        points.push({ g: growthRates[String(rn)] || 0.15, dist: perRoundAvg[rn][key] });
+      }
+    }
+    if (points.length < 3) continue;
+
+    // Weighted least squares per class
+    const result = [0, 0, 0, 0, 0, 0];
+    for (let c = 0; c < 6; c++) {
+      let sumW = 0, sumG = 0, sumP = 0, sumGG = 0, sumGP = 0;
+      for (const pt of points) {
+        const w = roundWeights[pt.g] || 1 / points.length;
+        sumW += 1; sumG += pt.g; sumP += pt.dist[c];
+        sumGG += pt.g * pt.g; sumGP += pt.g * pt.dist[c];
+      }
+      const n = sumW;
+      const denom = n * sumGG - sumG * sumG;
+      if (Math.abs(denom) < 1e-10) {
+        result[c] = sumP / n;
+      } else {
+        const b = (n * sumGP - sumG * sumP) / denom;
+        const a = (sumP - b * sumG) / n;
+        result[c] = Math.max(0, a + b * targetGrowth);
+      }
+    }
+    // Normalize
+    const s = result.reduce((a, b) => a + b, 0);
+    if (s > 0) linModel[key] = result.map(v => v / s);
+  }
+
+  function lookupKey(fineKey, baseKey) {
+    // Try weighted mean model
+    let wmDist = null;
+    if (meanModel[fineKey]) {
+      wmDist = [...meanModel[fineKey]];
+      if (fineKey !== baseKey && meanModel[baseKey]) {
+        for (let c = 0; c < 6; c++) wmDist[c] = (1 - regWeight) * wmDist[c] + regWeight * meanModel[baseKey][c];
+      }
+    } else if (meanModel[baseKey]) {
+      wmDist = [...meanModel[baseKey]];
+    }
+
+    // Try linear model
+    let lnDist = linModel[fineKey] || linModel[baseKey] || null;
+
+    // Blend weighted mean and linear model
+    if (wmDist && lnDist) {
+      return wmDist.map((v, c) => (1 - linWeight) * v + linWeight * lnDist[c]);
+    }
+    if (wmDist) return wmDist;
+    if (lnDist) return lnDist;
+
+    // Progressive fallback
+    let fb = baseKey;
+    while (fb.length > 1) {
+      fb = fb.slice(0, -1);
+      if (meanModel[fb]) return [...meanModel[fb]];
+    }
+    return [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+  }
+
+  const pred = [];
+  for (let y = 0; y < H; y++) {
+    const row = [];
+    for (let x = 0; x < W; x++) {
+      const enhKey = getEnhancedKey(y, x);
+      const coarseKey = getFeatureKey(initGrid, settPos, y, x);
+      let prior = lookupKey(enhKey, coarseKey);
+
+      let entropy = 0;
+      for (let c = 0; c < 6; c++) if (prior[c] > 0.001) entropy -= prior[c] * Math.log(prior[c]);
+      const cellFloor = entropy > 0.5 ? floor : floor * 0.1;
+      const floored = prior.map(v => Math.max(v, cellFloor));
+      const sum = floored.reduce((a, b) => a + b, 0);
+      row.push(floored.map(v => v / sum));
+    }
+    pred.push(row);
+  }
+  return pred;
+}
+
+module.exports = { predict };

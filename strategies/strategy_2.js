@@ -1,55 +1,46 @@
-Looking at the scores, R13 (4.5) and R14 (5.8) are catastrophic — likely due to hard K-selection picking wrong rounds and feature key misses falling back to uniform `[1/6,...]`. Key improvements: exponential decay weighting, multi-bandwidth ensemble, hierarchical fallback blending, and regularization toward the global model.
-
 const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
 
 function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
   const floor = config.FLOOR || 0.0001;
   const targetGrowth = growthRates[String(testRound)] || 0.15;
+  const allRoundNums = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
 
   const settPos = new Set();
   for (const s of settlements) settPos.add(s.y * W + s.x);
 
-  const allRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+  // Per-round distribution with shrinkage toward coarser feature key
+  const shrinkThreshold = 20;
 
-  function computeWeights(sigma) {
-    const w = {};
-    let sum = 0;
-    for (const r of allRounds) {
-      const d = growthRates[String(r)] - targetGrowth;
-      w[r] = Math.exp(-d * d / (2 * sigma * sigma));
-      sum += w[r];
+  function getRoundDist(roundNum, key) {
+    const buckets = perRoundBuckets[roundNum];
+    if (!buckets) return null;
+    const fine = buckets[key];
+    const coarseKey = key.slice(0, -1);
+    const coarse = buckets[coarseKey];
+    if (!fine && !coarse) return null;
+    if (fine && coarse) {
+      const fineAvg = fine.sum.map(v => v / fine.count);
+      const coarseAvg = coarse.sum.map(v => v / coarse.count);
+      const shrinkage = 1 / (1 + fine.count / shrinkThreshold);
+      return fineAvg.map((v, i) => (1 - shrinkage) * v + shrinkage * coarseAvg[i]);
     }
-    for (const r of allRounds) w[r] /= sum;
-    return w;
+    if (fine) return fine.sum.map(v => v / fine.count);
+    return coarse.sum.map(v => v / coarse.count);
   }
 
-  function buildModel(weights) {
-    const model = {};
-    for (const r of allRounds) {
-      const buckets = perRoundBuckets[r];
-      if (!buckets) continue;
-      const w = weights[r];
-      for (const key in buckets) {
-        if (!model[key]) model[key] = [0, 0, 0, 0, 0, 0];
-        const b = buckets[key];
-        for (let c = 0; c < 6; c++) model[key][c] += w * b.sum[c] / b.count;
-      }
+  // Gaussian kernel weights for growth-rate similarity
+  function computeWeights(bandwidth) {
+    const weights = {};
+    for (const r of allRoundNums) {
+      const diff = (growthRates[String(r)] || 0.15) - targetGrowth;
+      weights[r] = Math.exp(-0.5 * (diff / bandwidth) ** 2);
     }
-    for (const key in model) {
-      const s = model[key].reduce((a, b) => a + b, 0);
-      if (s > 0) for (let c = 0; c < 6; c++) model[key][c] /= s;
-    }
-    return model;
+    return weights;
   }
 
-  const sigmas = [0.03, 0.06, 0.12, 0.24];
-  const ensModels = sigmas.map(s => buildModel(computeWeights(s)));
-
-  const uniW = {};
-  for (const r of allRounds) uniW[r] = 1 / allRounds.length;
-  const uniModel = buildModel(uniW);
-
-  const regW = 0.25;
+  // Multi-bandwidth ensemble weighted by effective sample size
+  const bandwidths = [0.03, 0.06, 0.12, 0.25];
+  const allWeightSets = bandwidths.map(bw => computeWeights(bw));
 
   const pred = [];
   for (let y = 0; y < H; y++) {
@@ -57,52 +48,46 @@ function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound,
     for (let x = 0; x < W; x++) {
       const key = getFeatureKey(initGrid, settPos, y, x);
 
-      // Hierarchical fallback: try full key, then progressively shorter
-      const keys = [key];
-      for (let k = key.length - 1; k >= 1; k--) keys.push(key.slice(0, k));
+      const ensemble = new Float64Array(6);
+      let ensembleWeightSum = 0;
 
-      // Ensemble average with hierarchical lookup per model
-      const avg = [0, 0, 0, 0, 0, 0];
-      let hitCount = 0;
-      for (const model of ensModels) {
-        for (const k of keys) {
-          if (model[k]) {
-            for (let c = 0; c < 6; c++) avg[c] += model[k][c];
-            hitCount++;
-            break;
-          }
+      for (const weights of allWeightSets) {
+        const dist = new Float64Array(6);
+        let wTotal = 0;
+        let wSqTotal = 0;
+        let contributing = 0;
+
+        for (const r of allRoundNums) {
+          const d = getRoundDist(r, key);
+          if (!d) continue;
+          const w = weights[r];
+          for (let c = 0; c < 6; c++) dist[c] += w * d[c];
+          wTotal += w;
+          wSqTotal += w * w;
+          contributing++;
+        }
+
+        if (wTotal > 0 && contributing > 0) {
+          // Effective sample size as confidence in this bandwidth
+          const ess = (wTotal * wTotal) / wSqTotal;
+          const bwWeight = Math.sqrt(ess);
+          for (let c = 0; c < 6; c++) ensemble[c] += bwWeight * dist[c] / wTotal;
+          ensembleWeightSum += bwWeight;
         }
       }
 
-      // Uniform model with same hierarchical fallback
-      let uni = null;
-      for (const k of keys) {
-        if (uniModel[k]) { uni = uniModel[k]; break; }
-      }
-
-      let dist;
-      if (hitCount > 0) {
-        for (let c = 0; c < 6; c++) avg[c] /= hitCount;
-        if (uni) {
-          dist = avg.map((v, c) => (1 - regW) * v + regW * uni[c]);
-        } else {
-          dist = avg;
-        }
-      } else if (uni) {
-        dist = [...uni];
+      let prior;
+      if (ensembleWeightSum > 0) {
+        prior = Array.from(ensemble).map(v => v / ensembleWeightSum);
       } else {
-        dist = [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6];
+        prior = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
       }
 
-      // Adaptive floor: higher for uncertain predictions
-      let ent = 0;
-      for (let c = 0; c < 6; c++) {
-        if (dist[c] > 1e-10) ent -= dist[c] * Math.log(dist[c]);
-      }
-      const eRatio = ent / Math.log(6);
-      const cellFloor = floor + 0.004 * eRatio;
+      // Adaptive floor: higher for uncertain (high-entropy) cells
+      const entropy = prior.reduce((s, p) => p > 0.001 ? s - p * Math.log(p) : s, 0);
+      const adaptiveFloor = floor * (1 + 5 * entropy / Math.log(6));
 
-      const floored = dist.map(v => Math.max(v, cellFloor));
+      const floored = prior.map(v => Math.max(v, adaptiveFloor));
       const sum = floored.reduce((a, b) => a + b, 0);
       row.push(floored.map(v => v / sum));
     }

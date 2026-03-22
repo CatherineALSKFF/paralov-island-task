@@ -65,6 +65,7 @@ const ROUND_IDS = {
   5: 'fd3c92ff', 6: 'ae78003a', 7: '36e581f1', 8: 'c5cdf100',
   9: '2a341ace', 10: '75e625c3', 11: '324fde07', 12: '795bfb1f',
   13: '7b4bda99', 14: 'd0a2c894', 15: 'cc5442dd',
+  16: '8f664aed', 17: '3eb0c25d', 18: 'b0f9d1bf', 19: '597e60cf', 20: 'fd82f643', 21: 'b3a0be6b', 22: 'a8be24e1',
 }
 
 // ── Scoring (exact competition formula) ──
@@ -103,6 +104,17 @@ function getFeatureKey(grid, settPos, y, x) {
   if (v === 10) return 'O'
   if (v === 5) return 'M'
   const t = v === 4 ? 'F' : (v === 1 || v === 2) ? 'S' : 'P'
+
+  // Adjacent settlements (radius 1) - direct expansion targets
+  let adj = 0
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!dy && !dx) continue
+      const ny = y + dy, nx = x + dx
+      if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny * W + nx)) adj++
+    }
+
+  // Nearby settlements (radius 3) - influence zone
   let nS = 0
   for (let dy = -3; dy <= 3; dy++)
     for (let dx = -3; dx <= 3; dx++) {
@@ -110,12 +122,40 @@ function getFeatureKey(grid, settPos, y, x) {
       const ny = y + dy, nx = x + dx
       if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny * W + nx)) nS++
     }
+
+  // "Between settlements" - settlements on opposite sides (corridor cell)
+  let between = false
+  if (adj === 0 && nS >= 2) {
+    // Check if there are settlements in at least 2 opposing quadrants
+    let hasN = false, hasS = false, hasE = false, hasW = false
+    for (let dy = -3; dy <= 3; dy++)
+      for (let dx = -3; dx <= 3; dx++) {
+        if (!dy && !dx) continue
+        const ny = y + dy, nx = x + dx
+        if (ny >= 0 && ny < H && nx >= 0 && nx < W && settPos.has(ny * W + nx)) {
+          if (dy < 0) hasN = true
+          if (dy > 0) hasS = true
+          if (dx < 0) hasW = true
+          if (dx > 0) hasE = true
+        }
+      }
+    between = (hasN && hasS) || (hasE && hasW)
+  }
+
+  // Coastal
   let coast = false
   for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]]) {
     const ny = y + dy, nx = x + dx
     if (ny >= 0 && ny < H && nx >= 0 && nx < W && grid[ny][nx] === 10) coast = true
   }
-  return t + (nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3') + (coast ? 'c' : '')
+
+  // Build key: terrain + adjacency + nearby + between + coast
+  const adjKey = adj > 0 ? 'a' + Math.min(adj, 3) : ''
+  const nKey = nS === 0 ? '0' : nS <= 2 ? '1' : nS <= 5 ? '2' : '3'
+  const bKey = between ? 'b' : ''
+  const cKey = coast ? 'c' : ''
+
+  return t + adjKey + nKey + bKey + cKey
 }
 
 // ── Baseline strategy: adaptive K=3 ──
@@ -135,6 +175,21 @@ function mergeBuckets(perRoundBuckets, roundNums) {
   return out
 }
 
+function generateFallbacks(key) {
+  if (key === 'O' || key === 'M') return []
+  const fbs = []
+  if (key.endsWith('c')) fbs.push(key.slice(0, -1))
+  const noC = key.replace(/c$/, '')
+  if (noC.endsWith('b')) fbs.push(noC.slice(0, -1))
+  const t = key[0]
+  const nMatch = key.match(/(\d)[bc]*$/)
+  if (nMatch) {
+    fbs.push(t + nMatch[1])
+    for (let n = parseInt(nMatch[1]); n >= 0; n--) fbs.push(t + n)
+  }
+  return [...new Set(fbs)]
+}
+
 function selectClosestRounds(growthRates, targetRate, K = 3) {
   return Object.entries(growthRates)
     .map(([rn, rate]) => ({ rn: parseInt(rn), dist: Math.abs(rate - targetRate) }))
@@ -143,21 +198,80 @@ function selectClosestRounds(growthRates, targetRate, K = 3) {
     .map(c => c.rn)
 }
 
-function baselinePredict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config = {}) {
-  const K = config.K ?? 3
-  const nPrior = config.N_PRIOR ?? 15
-  const floor = config.FLOOR ?? 0.001
+// Weighted merge: all rounds contribute, gaussian-weighted by growth similarity
+function weightedMergeBuckets(perRoundBuckets, growthRates, targetGrowth, sigma, excludeRound) {
+  const roundNums = Object.keys(perRoundBuckets).map(Number).filter(n => n !== excludeRound)
+  let totalWeight = 0
+  const weights = {}
+  for (const rn of roundNums) {
+    const dist = Math.abs((growthRates[String(rn)] || 0.15) - targetGrowth)
+    const w = Math.exp(-dist * dist / (2 * sigma * sigma))
+    weights[rn] = w
+    totalWeight += w
+  }
+  const model = {}
+  for (const rn of roundNums) {
+    const w = weights[rn] / totalWeight
+    const b = perRoundBuckets[String(rn)]
+    if (!b) continue
+    for (const [key, val] of Object.entries(b)) {
+      if (!model[key]) model[key] = { count: 0, sum: [0,0,0,0,0,0] }
+      const avg = val.sum.map(v => v / val.count)
+      model[key].count += w * val.count
+      for (let c = 0; c < 6; c++) model[key].sum[c] += w * avg[c] * val.count
+    }
+  }
+  const out = {}
+  for (const [k, v] of Object.entries(model)) out[k] = v.sum.map(s => s / v.count)
+  return out
+}
 
-  // Get growth rate for this round (for LOO, use the actual rate as "oracle" since VP would estimate it)
+// Simulate VP observations from GT (for eval: sample N random viewports from GT as "observations")
+function simulateVPFromGT(groundTruth, nObservations) {
+  const vpCounts = Array.from({ length: H }, () => Array.from({ length: H }, () => [0,0,0,0,0,0]))
+  const vpTotal = Array.from({ length: H }, () => Array(W).fill(0))
+
+  // Use same 9 viewport positions as the real query planner
+  const positions = [
+    { x: 0, y: 0 }, { x: 13, y: 0 }, { x: 25, y: 0 },
+    { x: 0, y: 13 }, { x: 13, y: 13 }, { x: 25, y: 13 },
+    { x: 0, y: 25 }, { x: 13, y: 25 }, { x: 25, y: 25 },
+  ]
+
+  for (let obs = 0; obs < nObservations; obs++) {
+    const vp = positions[obs % positions.length]
+    for (let vy = 0; vy < 15; vy++) {
+      for (let vx = 0; vx < 15; vx++) {
+        const gy = vp.y + vy, gx = vp.x + vx
+        if (gy >= H || gx >= W) continue
+        // Sample from GT probability distribution
+        const probs = groundTruth[gy][gx]
+        const r = Math.random()
+        let cumul = 0
+        let sampledClass = 0
+        for (let c = 0; c < 6; c++) {
+          cumul += probs[c]
+          if (r < cumul) { sampledClass = c; break }
+        }
+        vpCounts[gy][gx][sampledClass]++
+        vpTotal[gy][gx]++
+      }
+    }
+  }
+  return { vpCounts, vpTotal }
+}
+
+function baselinePredict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config = {}) {
+  const nPrior = config.N_PRIOR ?? 4
+  const floor = config.FLOOR ?? 0.0001
+  const sigma = config.sigma ?? 0.05
+  const vpCounts = config._vpCounts ?? null  // injected by eval for VP simulation
+  const vpTotal = config._vpTotal ?? null
+
   const targetGrowth = growthRates[String(testRound)] ?? 0.15
 
-  // Select K closest rounds EXCLUDING the test round
-  const candidates = { ...growthRates }
-  delete candidates[String(testRound)]
-  const closestRounds = selectClosestRounds(candidates, targetGrowth, K)
-
-  // Build model from those rounds
-  const adaptiveModel = mergeBuckets(perRoundBuckets, closestRounds)
+  // Build weighted model (gaussian-weighted by growth similarity)
+  const adaptiveModel = weightedMergeBuckets(perRoundBuckets, growthRates, targetGrowth, sigma, testRound)
   const allRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound)
   const allModel = mergeBuckets(perRoundBuckets, allRounds)
 
@@ -171,12 +285,27 @@ function baselinePredict(initGrid, settlements, perRoundBuckets, growthRates, te
       const key = getFeatureKey(initGrid, settPos, y, x)
       let prior = adaptiveModel[key] ? [...adaptiveModel[key]] : allModel[key] ? [...allModel[key]] : null
       if (!prior) {
-        const fb = key.slice(0, -1)
-        prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : [1/6,1/6,1/6,1/6,1/6,1/6]
+        const fallbacks = generateFallbacks(key)
+        for (const fb of fallbacks) {
+          prior = adaptiveModel[fb] ? [...adaptiveModel[fb]] : allModel[fb] ? [...allModel[fb]] : null
+          if (prior) break
+        }
+        if (!prior) prior = [1/6,1/6,1/6,1/6,1/6,1/6]
       }
-      const floored = prior.map(v => Math.max(v, floor))
-      const sum = floored.reduce((a, b) => a + b, 0)
-      row.push(floored.map(v => v / sum))
+
+      // Multi-observation Bayesian update if VP data exists
+      if (vpCounts && vpTotal && vpTotal[y][x] > 0) {
+        const nObs = vpTotal[y][x]
+        const q = prior.map((p, c) => nPrior * p + vpCounts[y][x][c])
+        const total = nPrior + nObs
+        const floored = q.map(v => Math.max(v / total, floor))
+        const sum = floored.reduce((a, b) => a + b, 0)
+        row.push(floored.map(v => v / sum))
+      } else {
+        const floored = prior.map(v => Math.max(v, floor))
+        const sum = floored.reduce((a, b) => a + b, 0)
+        row.push(floored.map(v => v / sum))
+      }
     }
     pred.push(row)
   }
@@ -184,9 +313,11 @@ function baselinePredict(initGrid, settlements, perRoundBuckets, growthRates, te
 }
 
 // ── Run LOO cross-validation ──
+// config.vpMode: 0 = model-only, 9 = 1 VP pass (9 viewports), 18 = 2 passes, etc.
 function runLOO(predictFn, perRoundBuckets, growthRates, config = {}) {
   const results = []
   const rounds = Object.keys(ROUND_IDS).map(Number)
+  const vpMode = config.vpMode ?? 0
 
   for (const testRound of rounds) {
     const prefix = ROUND_IDS[testRound]
@@ -198,7 +329,14 @@ function runLOO(predictFn, perRoundBuckets, growthRates, config = {}) {
       const gtRaw = loadGT(prefix, seed)
       if (!gtRaw) continue
       const gt = { ground_truth: gtRaw.ground_truth || gtRaw.gt }
+      if (!gt.ground_truth) continue
       if (!inits[seed]) continue
+
+      let evalConfig = { ...config }
+      if (vpMode > 0) {
+        const { vpCounts, vpTotal } = simulateVPFromGT(gt.ground_truth, vpMode)
+        evalConfig = { ...config, _vpCounts: vpCounts, _vpTotal: vpTotal }
+      }
 
       const pred = predictFn(
         inits[seed].grid,
@@ -206,7 +344,7 @@ function runLOO(predictFn, perRoundBuckets, growthRates, config = {}) {
         perRoundBuckets,
         growthRates,
         testRound,
-        config
+        evalConfig
       )
       const score = computeScore(pred, gt.ground_truth)
       seedScores.push(score)
@@ -275,6 +413,6 @@ async function main() {
 }
 
 // Export for use as module
-module.exports = { runLOO, baselinePredict, computeScore, getFeatureKey, terrainToClass, mergeBuckets, selectClosestRounds, loadGTModel, loadGrowthRates }
+module.exports = { runLOO, baselinePredict, computeScore, getFeatureKey, terrainToClass, mergeBuckets, weightedMergeBuckets, selectClosestRounds, simulateVPFromGT, loadGTModel, loadGrowthRates }
 
 if (require.main === module) main().catch(console.error)

@@ -28,6 +28,12 @@ const ROUND_IDS: Record<number, string> = {
   15: 'cc5442dd-bc5d-418b-911b-7eb960cb0390',
   16: '8f664aed-8839-4c85-bed0-77a2cac7c6f5',
   17: '3eb0c25d-28fa-48ca-b8e1-fc249e3918e9',
+  18: 'b0f9d1bf-4b71-4e6e-816c-19c718d29056',
+  19: '597e60cf-d1a1-4627-ac4d-2a61da68b6df',
+  20: 'fd82f643-15e2-40e7-9866-8d8f5157081c',
+  21: 'b3a0be6b-b48b-419d-916a-b7a77fa58c4d',
+  22: 'a8be24e1-bd48-49bb-aa46-c5593da79f6f',
+  23: '93c39605-628f-4706-abd9-08582f8b61d7',
 }
 
 // Reverse lookup: id prefix -> round number
@@ -88,7 +94,25 @@ app.get('/api/inits/:roundNum', (c) => {
   const { roundNum } = c.req.param()
   const file = join(DATA_DIR, `inits_R${roundNum}.json`)
   if (!existsSync(file)) return c.json({ error: 'Not found' }, 404)
-  return c.json(JSON.parse(readFileSync(file, 'utf8')))
+  const raw = JSON.parse(readFileSync(file, 'utf8'))
+  // Normalize: ensure each seed has {grid, settlements}
+  const normalized: Record<number, { grid: number[][]; settlements: { y: number; x: number }[] }> = {}
+  for (let s = 0; s < 5; s++) {
+    const item = raw[s]
+    if (!item) continue
+    if (Array.isArray(item) && Array.isArray(item[0])) {
+      // Raw grid - extract settlements
+      const grid = item
+      const settlements: { y: number; x: number }[] = []
+      for (let y = 0; y < 40; y++)
+        for (let x = 0; x < 40; x++)
+          if (grid[y][x] === 1 || grid[y][x] === 2) settlements.push({ y, x })
+      normalized[s] = { grid, settlements }
+    } else if (item.grid) {
+      normalized[s] = { grid: item.grid, settlements: item.settlements || [] }
+    }
+  }
+  return c.json(normalized)
 })
 
 // Cached predictions
@@ -327,7 +351,11 @@ let optimizerLog: string[] = []
 let optimizerStatus: 'idle' | 'running' | 'done' | 'error' = 'idle'
 
 app.post('/api/optimizer/start', (c) => {
-  if (optimizerProcess) return c.json({ error: 'Already running' }, 409)
+  // Kill existing process if any
+  if (optimizerProcess) {
+    try { optimizerProcess.kill('SIGTERM') } catch {}
+    optimizerProcess = null
+  }
 
   const iterations = 10
   optimizerLog = []
@@ -365,6 +393,16 @@ app.post('/api/optimizer/stop', (c) => {
   optimizerProcess = null
   optimizerStatus = 'idle'
   return c.json({ status: 'stopped' })
+})
+
+// Live optimizer status (from optimize_live.js)
+app.get('/api/live-optimizer/status', (c) => {
+  const statusFile = join(DATA_DIR, 'live_optimizer_status.json')
+  if (!existsSync(statusFile)) return c.json({ status: 'not running' })
+  try {
+    const data = JSON.parse(readFileSync(statusFile, 'utf8'))
+    return c.json(data)
+  } catch { return c.json({ status: 'error reading status' }) }
 })
 
 app.get('/api/optimizer/status', (c) => {

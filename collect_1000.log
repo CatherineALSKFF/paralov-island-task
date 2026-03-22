@@ -1,0 +1,138 @@
+[20:56:01] ╔═════════════════════════════════════════════╗
+[20:56:01] ║  Massive Replay Collector (1000/round)     ║
+[20:56:01] ╚═════════════════════════════════════════════╝
+[20:56:01] 
+Found 9 completed rounds
+[20:56:01] 
+═══ Collecting R9 (2a341ace...) ═══
+[20:56:01]   Need 1000 more replays (have 0/1000)
+[20:56:02]   Progress: 0/1000 replays (10 errors, 0%)
+[20:56:05]   Progress: 0/1000 replays (20 errors, 0%)
+[20:56:08]   Progress: 2/1000 replays (28 errors, 0%)
+[20:56:09]   Progress: 3/1000 replays (37 errors, 0%)
+[20:56:12]   Progress: 6/1000 replays (44 errors, 1%)
+[20:56:14]   Progress: 7/1000 replays (53 errors, 1%)
+[20:56:17]   Progress: 9/1000 replays (61 errors, 1%)
+[20:57:25]   Progress: 51/1000 replays (309 errors, 5%)
+[20:57:26]   Progress: 52/1000 replays (318 errors, 5%)
+[20:57:28]   Progress: 53/1000 replays (327 errors, 5%)
+[20:57:30]   Progress: 56/1000 replays (334 errors, 6%)
+[20:57:33]   Progress: 59/1000 replays (341 errors, 6%)
+[20:58:17]   Progress: 100/1000 replays (460 errors, 10%)
+[20:58:20]   Progress: 102/1000 replays (468 errors, 10%)
+[20:58:21]   Progress: 105/1000 replays (475 errors, 11%)
+[20:58:24]   Progress: 107/1000 replays (483 errors, 11%)
+[20:59:08]   Progress: 150/1000 replays (620 errors, 15%)
+[20:59:11]   Progress: 151/1000 replays (629 errors, 15%)
+[20:59:13]   Progress: 154/1000 replays (636 errors, 15%)
+[20:59:16]   Progress: 157/1000 replays (643 errors, 16%)
+[20:59:18]   Progress: 158/1000 replays (652 errors, 16%)
+[21:00:00]   Progress: 203/1000 replays (797 errors, 20%)
+[21:00:02]   Progress: 205/1000 replays (805 errors, 21%)
+[21:00:05]   Progress: 208/1000 replays (812 errors, 21%)
+[21:00:43]   Progress: 250/1000 replays (940 errors, 25%)
+[21:00:45]   Progress: 252/1000 replays (948 errors, 25%)
+[21:00:48]   Progress: 255/1000 replays (955 errors, 26%)
+[21:00:51]   Progress: 258/1000 replays (962 errors, 26%)
+[21:01:38]   Progress: 301/1000 replays (1109 errors, 30%)
+[21:01:40]   Progress: 303/1000 replays (1117 errors, 30%)
+[21:01:44]   Progress: 306/1000 replays (1124 errors, 31%)
+[21:01:46]   Progress: 307/1000 replays (1133 errors, 31%)
+[21:01:49]   Progress: 308/1000 replays (1142 errors, 31%)
+[21:02:40]   Progress: 350/1000 replays (1270 errors, 35%)
+[21:02:44]   Progress: 354/1000 replays (1276 errors, 35%)
+[21:02:45]   Progress: 354/1000 replays (1286 errors, 35%)
+[21:02:46]   Progress: 356/1000 replays (1294 errors, 36%)
+[21:02:48]   Progress: 357/1000 replays (1303 errors, 36%)
+[21:02:51]   Progress: 358/1000 replays (1312 errors, 36%)
+[21:02:51]   Progress: 359/1000 replays (1321 errors, 36%)
+[21:02:53]   Progress: 359/1000 replays (1331 errors, 36%)
+[21:03:49]   Progress: 402/1000 replays (1508 errors, 40%)
+[21:03:52]   Progress: 404/1000 replays (1516 errors, 40%)
+[21:03:52]   Progress: 404/1000 replays (1526 errors, 40%)
+[21:03:54]   Progress: 406/1000 replays (1534 errors, 41%)
+[21:03:57]   Progress: 408/1000 replays (1542 errors, 41%)
+[21:04:42]   Progress: 450/1000 replays (1670 errors, 45%)
+[21:04:46]   Progress: 451/1000 replays (1679 errors, 45%)
+[21:04:49]   Progress: 454/1000 replays (1686 errors, 45%)
+[21:04:53]   Progress: 458/1000 replays (1692 errors, 46%)
+[21:05:38]   Progress: 501/1000 replays (1849 errors, 50%)
+[21:05:40]   Progress: 502/1000 replays (1858 errors, 50%)
+[21:05:42]   Progress: 506/1000 replays (1864 errors, 51%)
+[21:05:45]   Progress: 509/1000 replays (1871 errors, 51%)
+[21:06:29]   Progress: 552/1000 replays (1978 errors, 55%)
+[21:06:32]   Progress: 555/1000 replays (1985 errors, 56%)
+[21:06:33]   Progress: 558/1000 replays (1992 errors, 56%)
+[21:07:12]   Progress: 602/1000 replays (2138 errors, 60%)
+[21:07:14]   Progress: 603/1000 replays (2147 errors, 60%)
+[21:07:15]   Progress: 606/1000 replays (2154 errors, 61%)
+[21:07:17]   Progress: 607/1000 replays (2163 errors, 61%)
+[21:07:59]   Progress: 650/1000 replays (2300 errors, 65%)
+[21:08:01]   Progress: 653/1000 replays (2307 errors, 65%)
+[21:08:03]   Progress: 656/1000 replays (2314 errors, 66%)
+[21:08:06]   Progress: 657/1000 replays (2323 errors, 66%)
+[21:08:49]   Progress: 703/1000 replays (2427 errors, 70%)
+[21:08:52]   Progress: 707/1000 replays (2433 errors, 71%)
+[21:09:33]   Progress: 751/1000 replays (2559 errors, 75%)
+[21:09:35]   Progress: 755/1000 replays (2565 errors, 76%)
+[21:09:37]   Progress: 756/1000 replays (2574 errors, 76%)
+[21:09:40]   Progress: 757/1000 replays (2583 errors, 76%)
+[21:10:21]   Progress: 801/1000 replays (2699 errors, 80%)
+[21:10:23]   Progress: 803/1000 replays (2707 errors, 80%)
+[21:10:25]   Progress: 805/1000 replays (2715 errors, 81%)
+[21:11:17]   Progress: 852/1000 replays (2828 errors, 85%)
+[21:11:20]   Progress: 855/1000 replays (2835 errors, 86%)
+[21:11:22]   Progress: 856/1000 replays (2844 errors, 86%)
+[21:12:10]   Progress: 900/1000 replays (2950 errors, 90%)
+[21:12:15]   Progress: 904/1000 replays (2956 errors, 90%)
+[21:12:22]   Progress: 909/1000 replays (2961 errors, 91%)
+[21:13:05]   Progress: 952/1000 replays (3078 errors, 95%)
+[21:13:07]   Progress: 955/1000 replays (3085 errors, 96%)
+[21:13:09]   Progress: 957/1000 replays (3093 errors, 96%)
+[21:13:51]   Progress: 1000/1000 replays (3246 errors, 100%)
+[21:13:51]   ✅ 1000 replays saved to /Users/catherinaalskaff/Desktop/Projects/NMIAI/Astar Island/data/replays_R9.json (3246 total errors)
+[21:13:51] 
+═══ Collecting R8 (c5cdf100...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R7 (36e581f1...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R6 (ae78003a...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R5 (fd3c92ff...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R4 (8e839974...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R3 (f1dac9a9...) ═══
+[21:13:51]   Loaded 1000 existing replays from disk
+[21:13:51]   Already have 1000/1000 replays. Skipping.
+[21:13:51] 
+═══ Collecting R2 (76909e29...) ═══
+[21:13:52]   Loaded 1000 existing replays from disk
+[21:13:52]   Already have 1000/1000 replays. Skipping.
+[21:13:52] 
+═══ Collecting R1 (71451d74...) ═══
+[21:13:52]   Loaded 1000 existing replays from disk
+[21:13:52]   Already have 1000/1000 replays. Skipping.
+[21:13:52] 
+╔═════════════════════════════════════════════╗
+[21:13:52] ║  ✅ Collection complete!                      ║
+[21:13:52] ╚═════════════════════════════════════════════╝
+[21:13:52]   R9: 1000 replays
+[21:13:52]   R8: 1000 replays
+[21:13:52]   R7: 1000 replays
+[21:13:52]   R6: 1000 replays
+[21:13:52]   R5: 1000 replays
+[21:13:52]   R4: 1000 replays
+[21:13:52]   R3: 1000 replays
+[21:13:52]   R2: 1000 replays
+[21:13:52]   R1: 1000 replays

@@ -1,0 +1,38 @@
+[21:01:52] === SIMPLE AUTOPILOT ===
+[21:01:52] 
+=== R10 (75e625c3) weight=1.6289 ===
+[21:01:52] Training: R1, R2, R3, R4, R5, R6, R7, R8, R9
+[21:02:42] Model: 165 keys
+[21:02:42] Collecting viewport...
+[21:03:47]   50 VP observations collected
+[21:03:47]   VP fused: 83 D0 keys
+[21:03:47] Submitting predictions...
+[21:03:49]   Seed 0: OK
+[21:03:50]   Seed 1: OK
+[21:03:51]   Seed 2: OK
+[21:03:55]   Seed 3: OK
+[21:03:57]   Seed 4: OK
+[21:03:58] Done.
+[21:03:58]   Collecting 92 replays for R9...
+[21:05:38]   R9: 431 replays
+[00:03:46]   Saved GT R10
+[00:03:46]   Collecting 100 replays for R10...
+[04:20:52]   R10: 55 replays
+[04:21:23] 
+=== R12 (795bfb1f) weight=1.7959 ===
+[04:21:23] Training: R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
+[04:22:11] Model: 165 keys
+[04:22:11] Collecting viewport...
+[04:22:55]   50 VP observations collected
+[04:22:55]   VP fused: 78 D0 keys
+[04:22:55] Submitting predictions...
+[04:22:55]   Seed 0: OK
+[04:22:56]   Seed 1: OK
+[04:22:57]   Seed 2: OK
+[04:22:59]   Seed 3: OK
+[04:23:00]   Seed 4: OK
+[04:23:01] Done.
+[04:23:02]   Saved inits R11
+[04:23:05]   Saved GT R11
+[04:23:05]   Collecting 100 replays for R11...
+[04:24:48]   R11: 61 replays

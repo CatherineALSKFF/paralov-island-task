@@ -2,7 +2,7 @@ You are optimizing a terrain prediction algorithm for a simulation competition.
 
 TASK: Write a better predict() function. The function receives the initial 40x40 grid, settlement positions, per-round GT probability buckets, growth rates, and the test round number. It must return a 40x40x6 probability tensor.
 
-CURRENT BEST (avg LOO score: 70.3):
+CURRENT BEST (avg LOO score: 82.4):
 
 const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
 
@@ -39,27 +39,24 @@ module.exports = { predict };
 
 
 PER-ROUND SCORES:
-  R1: 87.2 (growth 18%)
-  R2: 88.5 (growth 21%)
-  R3: 72.9 (growth 0%)
-  R4: 94.6 (growth 10%)
-  R5: 79.3 (growth 14%)
-  R6: 80.3 (growth 27%)
-  R7: 61.2 (growth 19%)
-  R8: 92.6 (growth 3%)
-  R9: 84.9 (growth 15%)
-  R10: 84.3 (growth 1%)
-  R11: 84.2 (growth 30%)
-  R12: 44.6 (growth 19%)
-  R13: 4.5 (growth 11%)
-  R14: 5.8 (growth 28%)
-  R15: 89.2 (growth 0%)
+  R1: 87.4 (growth 18%)
+  R2: 89.4 (growth 21%)
+  R3: 78.9 (growth 0%)
+  R4: 94.3 (growth 10%)
+  R5: 80.4 (growth 14%)
+  R6: 81.7 (growth 27%)
+  R7: 61.9 (growth 19%)
+  R8: 93.2 (growth 3%)
+  R9: 91.3 (growth 15%)
+  R10: 86.7 (growth 1%)
+  R11: 87.2 (growth 30%)
+  R12: 45.7 (growth 19%)
+  R13: 91.6 (growth 11%)
+  R14: 75.4 (growth 28%)
+  R15: 91.1 (growth 19%)
 
 HISTORY OF ATTEMPTS:
-  baseline.js: avg=70.3 min=4.5 [baseline]
-  strategy_1.js: avg=65.1 min=7.4 [rejected]
-  strategy_2.js: avg=0.0 min=0.0 [error: Unexpected identifier 'at']
-  strategy_6.js: avg=68.1 min=6.7 [rejected]
+  baseline.js: avg=82.4 min=45.7 [baseline]
 
 AVAILABLE UTILITIES (require('./shared')):
 - terrainToClass(code), getFeatureKey(grid, settPos, y, x)

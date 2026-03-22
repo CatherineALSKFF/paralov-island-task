@@ -1,107 +1,116 @@
 const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
 
 function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
+  const floor = 0.0001;
   const targetGrowth = growthRates[String(testRound)] || 0.15;
-  const allRounds = Object.keys(perRoundBuckets).filter(rn => Number(rn) !== testRound);
+  const trainRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+
+  const sigmas = [0.03, 0.06, 0.12, 0.30];
+
+  function computeWeights(sigma) {
+    const w = {};
+    let total = 0;
+    for (const rn of trainRounds) {
+      const g = growthRates[String(rn)] || 0.15;
+      const diff = Math.abs(g - targetGrowth);
+      w[rn] = Math.exp(-0.5 * (diff / sigma) ** 2);
+      total += w[rn];
+    }
+    if (total > 0) for (const rn of trainRounds) w[rn] /= total;
+    return w;
+  }
+
+  function weightedMerge(roundWeights) {
+    const dist = {};
+    const counts = {};
+    for (const rn of trainRounds) {
+      const w = roundWeights[rn];
+      if (w < 1e-15) continue;
+      const buckets = perRoundBuckets[rn];
+      if (!buckets) continue;
+      for (const [key, bucket] of Object.entries(buckets)) {
+        if (!dist[key]) { dist[key] = new Float64Array(6); counts[key] = 0; }
+        for (let c = 0; c < 6; c++) dist[key][c] += w * bucket.sum[c];
+        counts[key] += w * bucket.count;
+      }
+    }
+    for (const key of Object.keys(dist)) {
+      if (counts[key] > 0) {
+        for (let c = 0; c < 6; c++) dist[key][c] /= counts[key];
+      }
+    }
+    return { dist, counts };
+  }
+
+  const models = sigmas.map(s => weightedMerge(computeWeights(s)));
+
+  const uniformW = {};
+  for (const rn of trainRounds) uniformW[rn] = 1 / trainRounds.length;
+  const uniformModel = weightedMerge(uniformW);
 
   const settPos = new Set();
   for (const s of settlements) settPos.add(s.y * W + s.x);
 
-  const keys = [];
+  const baseReg = 0.4;
+  const pred = [];
+  const logSix = Math.log(6);
+
   for (let y = 0; y < H; y++) {
     const row = [];
     for (let x = 0; x < W; x++) {
-      row.push(getFeatureKey(initGrid, settPos, y, x));
-    }
-    keys.push(row);
-  }
+      const key = getFeatureKey(initGrid, settPos, y, x);
+      const ensemble = new Float64Array(6);
 
-  const bandwidths = [0.04, 0.09, 0.22];
-  const ensembleW = 1 / bandwidths.length;
-  const regWeight = 0.35;
-  const floor = 0.012;
+      for (const model of models) {
+        let fine = model.dist[key];
+        let fineCount = model.counts[key] || 0;
 
-  const pred = [];
-  for (let y = 0; y < H; y++) {
-    const row = [];
-    for (let x = 0; x < W; x++) row.push(new Float64Array(6));
-    pred.push(row);
-  }
+        let coarse = null;
+        for (let trim = 1; trim < key.length; trim++) {
+          const sk = key.slice(0, -trim);
+          if (sk.length === 0) break;
+          if (model.dist[sk]) { coarse = model.dist[sk]; break; }
+        }
 
-  for (const bw of bandwidths) {
-    const wts = {};
-    let wSum = 0;
-    for (const rn of allRounds) {
-      const gr = growthRates[String(rn)] || 0.15;
-      const d = gr - targetGrowth;
-      const w = Math.exp(-d * d / (2 * bw * bw));
-      wts[rn] = w;
-      wSum += w;
-    }
-    for (const rn of allRounds) wts[rn] /= wSum;
+        if (!fine) {
+          fine = uniformModel.dist[key];
+          fineCount = uniformModel.counts[key] || 0;
+        }
+        if (!fine && coarse) { fine = coarse; coarse = null; }
+        if (!fine) {
+          for (let trim = 1; trim < key.length; trim++) {
+            const sk = key.slice(0, -trim);
+            if (sk.length === 0) break;
+            if (uniformModel.dist[sk]) { fine = uniformModel.dist[sk]; break; }
+          }
+        }
+        if (!fine) fine = new Float64Array([1/6,1/6,1/6,1/6,1/6,1/6]);
 
-    const fine = {}, coarse = {};
-    for (const rn of allRounds) {
-      const w = wts[rn];
-      const buckets = perRoundBuckets[rn];
-      if (!buckets) continue;
-      for (const [key, bucket] of Object.entries(buckets)) {
-        const n = bucket.count;
-        if (!fine[key]) fine[key] = { s: new Float64Array(6), tw: 0 };
-        for (let c = 0; c < 6; c++) fine[key].s[c] += (bucket.sum[c] / n) * w;
-        fine[key].tw += w;
-
-        const ck = key.slice(0, -1);
-        if (!coarse[ck]) coarse[ck] = { s: new Float64Array(6), tw: 0 };
-        for (let c = 0; c < 6; c++) coarse[ck].s[c] += (bucket.sum[c] / n) * w;
-        coarse[ck].tw += w;
-      }
-    }
-
-    const fN = {};
-    for (const [k, d] of Object.entries(fine)) {
-      fN[k] = new Float64Array(6);
-      if (d.tw > 0) for (let c = 0; c < 6; c++) fN[k][c] = d.s[c] / d.tw;
-    }
-    const cN = {};
-    for (const [k, d] of Object.entries(coarse)) {
-      cN[k] = new Float64Array(6);
-      if (d.tw > 0) for (let c = 0; c < 6; c++) cN[k][c] = d.s[c] / d.tw;
-    }
-
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const key = keys[y][x];
-        const ck = key.slice(0, -1);
-        const f = fN[key], co = cN[ck];
-
-        if (f && co) {
-          for (let c = 0; c < 6; c++)
-            pred[y][x][c] += ((1 - regWeight) * f[c] + regWeight * co[c]) * ensembleW;
-        } else if (f) {
-          for (let c = 0; c < 6; c++) pred[y][x][c] += f[c] * ensembleW;
-        } else if (co) {
-          for (let c = 0; c < 6; c++) pred[y][x][c] += co[c] * ensembleW;
-        } else {
-          for (let c = 0; c < 6; c++) pred[y][x][c] += (1 / 6) * ensembleW;
+        const reg = coarse ? baseReg / (1 + fineCount / 30) : 0;
+        for (let c = 0; c < 6; c++) {
+          ensemble[c] += coarse ? (1 - reg) * fine[c] + reg * coarse[c] : fine[c];
         }
       }
-    }
-  }
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
+      const nM = models.length;
+      let entropy = 0;
+      for (let c = 0; c < 6; c++) {
+        ensemble[c] /= nM;
+        if (ensemble[c] > 0) entropy -= ensemble[c] * Math.log(ensemble[c]);
+      }
+
+      const cellFloor = floor * (0.1 + 0.9 * entropy / logSix);
+      const result = new Array(6);
       let sum = 0;
       for (let c = 0; c < 6; c++) {
-        if (pred[y][x][c] < floor) pred[y][x][c] = floor;
-        sum += pred[y][x][c];
+        result[c] = Math.max(ensemble[c], cellFloor);
+        sum += result[c];
       }
-      const out = new Array(6);
-      for (let c = 0; c < 6; c++) out[c] = pred[y][x][c] / sum;
-      pred[y][x] = out;
+      for (let c = 0; c < 6; c++) result[c] /= sum;
+      row.push(result);
     }
+    pred.push(row);
   }
-
   return pred;
 }
 

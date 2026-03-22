@@ -1,155 +1,132 @@
-const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
+const { H, W, terrainToClass, getFeatureKey } = require('./shared');
 
 function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
-  const floor = config.FLOOR || 0.0001;
+  const floor = config.FLOOR || 0.00001;
+  const regWeight = config.REG || 0.15;
+  const lambda = config.LAMBDA || 40;
+  const tempBase = config.TEMP || 1.15;
+  const tempScale = config.TEMP_SCALE || 0.3;
   const targetGrowth = growthRates[String(testRound)] || 0.15;
-  const allRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+  const trainRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
 
   const settPos = new Set();
   for (const s of settlements) settPos.add(s.y * W + s.x);
 
-  // Per-round normalized distributions (each round contributes equally before weighting)
-  const perRound = {};
-  for (const r of allRounds) {
-    const bk = perRoundBuckets[r];
-    if (!bk) continue;
-    perRound[r] = {};
-    for (const key in bk) {
-      const b = bk[key];
-      if (b.count > 0) {
-        const total = b.sum.reduce((a, v) => a + v, 0);
-        if (total > 0) perRound[r][key] = b.sum.map(v => v / total);
+  // Exponential decay round weights by growth-rate similarity
+  // Applied to raw cell counts (Bayesian count-weighting)
+  const roundWeights = {};
+  for (const r of trainRounds) {
+    const g = growthRates[String(r)] || 0.15;
+    roundWeights[r] = Math.exp(-lambda * Math.abs(g - targetGrowth));
+  }
+
+  // Build weighted-count models (fine + coarse keys)
+  const fine = {}, coarse = {};
+  // Track per-round distributions for variance computation
+  const perRoundProbs = {};
+
+  for (const r of trainRounds) {
+    const buckets = perRoundBuckets[r];
+    if (!buckets) continue;
+    const w = roundWeights[r];
+    perRoundProbs[r] = {};
+
+    for (const key in buckets) {
+      const b = buckets[key];
+
+      // Per-round probability for variance
+      const p = new Array(6);
+      for (let c = 0; c < 6; c++) p[c] = b.sum[c] / b.count;
+      perRoundProbs[r][key] = p;
+
+      // Fine key weighted aggregate
+      if (!fine[key]) fine[key] = { wC: 0, wS: new Float64Array(6) };
+      fine[key].wC += b.count * w;
+      for (let c = 0; c < 6; c++) fine[key].wS[c] += b.sum[c] * w;
+
+      // Coarse key (drop coastal suffix)
+      const ck = key.length > 1 ? key.slice(0, -1) : key;
+      if (ck !== key) {
+        if (!coarse[ck]) coarse[ck] = { wC: 0, wS: new Float64Array(6) };
+        coarse[ck].wC += b.count * w;
+        for (let c = 0; c < 6; c++) coarse[ck].wS[c] += b.sum[c] * w;
       }
     }
   }
 
-  // Build growth-weighted fine-key model for given round weights
-  function buildFineModel(ws) {
-    const model = {};
-    for (const r of allRounds) {
-      if (!perRound[r]) continue;
-      const w = ws[r];
-      for (const key in perRound[r]) {
-        if (!model[key]) model[key] = { d: new Float64Array(6), tw: 0 };
-        const v = perRound[r][key];
-        for (let c = 0; c < 6; c++) model[key].d[c] += w * v[c];
-        model[key].tw += w;
-      }
+  // Normalize to probabilities
+  const fP = {}, cP = {};
+  for (const k in fine) {
+    if (fine[k].wC > 0) {
+      fP[k] = new Array(6);
+      for (let c = 0; c < 6; c++) fP[k][c] = fine[k].wS[c] / fine[k].wC;
     }
-    for (const key in model) {
-      const m = model[key];
-      if (m.tw > 0) for (let c = 0; c < 6; c++) m.d[c] /= m.tw;
+  }
+  for (const k in coarse) {
+    if (coarse[k].wC > 0) {
+      cP[k] = new Array(6);
+      for (let c = 0; c < 6; c++) cP[k][c] = coarse[k].wS[c] / coarse[k].wC;
     }
-    return model;
   }
 
-  // Build terrain-level aggregated model (aggregate all keys sharing first char)
-  function buildTerrainModel(ws) {
-    const model = {};
-    for (const r of allRounds) {
-      if (!perRound[r]) continue;
-      const w = ws[r];
-      const sums = {}, counts = {};
-      for (const key in perRound[r]) {
-        const tc = key[0];
-        if (!sums[tc]) { sums[tc] = [0, 0, 0, 0, 0, 0]; counts[tc] = 0; }
-        const v = perRound[r][key];
-        for (let c = 0; c < 6; c++) sums[tc][c] += v[c];
-        counts[tc]++;
-      }
-      for (const tc in sums) {
-        if (!model[tc]) model[tc] = { d: new Float64Array(6), tw: 0 };
-        const n = counts[tc];
-        for (let c = 0; c < 6; c++) model[tc].d[c] += w * (sums[tc][c] / n);
-        model[tc].tw += w;
+  // Compute cross-round variance per key (weighted)
+  const keyVariance = {};
+  for (const key in fP) {
+    let v = 0, wSum = 0;
+    for (const r of trainRounds) {
+      if (!perRoundProbs[r] || !perRoundProbs[r][key]) continue;
+      const w = roundWeights[r];
+      wSum += w;
+      for (let c = 0; c < 6; c++) {
+        const d = perRoundProbs[r][key][c] - fP[key][c];
+        v += w * d * d;
       }
     }
-    for (const tc in model) {
-      const m = model[tc];
-      if (m.tw > 0) for (let c = 0; c < 6; c++) m.d[c] /= m.tw;
-    }
-    return model;
+    keyVariance[key] = wSum > 0 ? v / wSum : 0;
   }
-
-  // Bandwidth ensemble: wide (conservative) to narrow (growth-specific)
-  const lambdas = [2, 5, 12, 25, 50];
-
-  const roundWS = lambdas.map(lambda => {
-    const w = {};
-    let s = 0;
-    for (const r of allRounds) {
-      const g = growthRates[String(r)] || 0.15;
-      w[r] = Math.exp(-lambda * Math.abs(g - targetGrowth));
-      s += w[r];
-    }
-    for (const r of allRounds) w[r] /= s;
-    return w;
-  });
-
-  // Pre-build all models
-  const fineModels = roundWS.map(ws => buildFineModel(ws));
-  const terrModels = roundWS.map(ws => buildTerrainModel(ws));
-  const nBw = lambdas.length;
 
   const pred = [];
   for (let y = 0; y < H; y++) {
     const row = [];
     for (let x = 0; x < W; x++) {
       const key = getFeatureKey(initGrid, settPos, y, x);
-      const fb = key.length > 1 ? key.slice(0, -1) : null;
-      const tc = key[0];
+      const ck = key.length > 1 ? key.slice(0, -1) : null;
 
-      const ens = [0, 0, 0, 0, 0, 0];
-      let ensN = 0;
+      const fineD = fP[key];
+      const coarseD = ck ? (cP[ck] || fP[ck]) : null;
 
-      for (let bi = 0; bi < nBw; bi++) {
-        const fm = fineModels[bi];
-        const tm = terrModels[bi];
-
-        const fine = fm[key] || null;
-        const mid = fb ? (fm[fb] || null) : null;
-        const coarse = tm[tc] || null;
-
-        // Two-stage hierarchical shrinkage
-        // Stage 1: regularize mid toward coarse
-        let midReg = null;
-        if (mid && coarse) {
-          const a = Math.min(mid.tw * 2, 0.8);
-          midReg = new Array(6);
-          for (let c = 0; c < 6; c++) midReg[c] = a * mid.d[c] + (1 - a) * coarse.d[c];
-        } else {
-          midReg = mid ? mid.d : (coarse ? coarse.d : null);
-        }
-
-        // Stage 2: regularize fine toward midReg (or coarse)
-        const reg = midReg || (coarse ? coarse.d : null);
-        let d;
-        if (fine && reg) {
-          const a = Math.min(fine.tw * 2, 0.85);
-          d = new Array(6);
-          for (let c = 0; c < 6; c++) d[c] = a * fine.d[c] + (1 - a) * reg[c];
-        } else if (fine) {
-          d = fine.d;
-        } else if (reg) {
-          d = reg;
-        } else {
-          continue;
-        }
-
-        for (let c = 0; c < 6; c++) ens[c] += d[c];
-        ensN++;
-      }
-
-      let final;
-      if (ensN > 0) {
-        final = ens.map(v => v / ensN);
+      let prior;
+      if (fineD && coarseD) {
+        prior = new Array(6);
+        for (let c = 0; c < 6; c++)
+          prior[c] = (1 - regWeight) * fineD[c] + regWeight * coarseD[c];
       } else {
-        final = [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6];
+        prior = fineD || coarseD || [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
       }
 
-      const floored = final.map(v => Math.max(v, floor));
-      const sum = floored.reduce((a, b) => a + b, 0);
-      row.push(floored.map(v => v / sum));
+      // Variance-aware temperature scaling
+      // Softens overconfident predictions, especially for high-variance keys
+      const v = keyVariance[key] || 0;
+      const temp = tempBase + tempScale * Math.sqrt(v);
+
+      if (temp > 1.001) {
+        let sum = 0;
+        for (let c = 0; c < 6; c++) {
+          prior[c] = Math.pow(Math.max(prior[c], 1e-10), 1 / temp);
+          sum += prior[c];
+        }
+        for (let c = 0; c < 6; c++) prior[c] /= sum;
+      }
+
+      // Floor and normalize
+      let sum = 0;
+      const result = new Array(6);
+      for (let c = 0; c < 6; c++) {
+        result[c] = Math.max(prior[c], floor);
+        sum += result[c];
+      }
+      for (let c = 0; c < 6; c++) result[c] /= sum;
+      row.push(result);
     }
     pred.push(row);
   }

@@ -1,125 +1,88 @@
-const { H, W, terrainToClass, getFeatureKey, mergeBuckets, selectClosestRounds } = require('./shared');
+const { H, W, getFeatureKey } = require('./shared');
 
 function predict(initGrid, settlements, perRoundBuckets, growthRates, testRound, config) {
-  const floor = config.FLOOR || 0.0001;
+  const floor = 0.0001;
+  const sigma = 0.12;
   const targetGrowth = growthRates[String(testRound)] || 0.15;
-  const allRoundNums = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+  const trainRounds = Object.keys(perRoundBuckets).map(Number).filter(n => n !== testRound);
+
+  // Collect all feature keys from training data
+  const allKeys = new Set();
+  for (const rn of trainRounds) {
+    const b = perRoundBuckets[String(rn)];
+    if (b) for (const k of Object.keys(b)) allKeys.add(k);
+  }
+
+  // LOESS: locally weighted linear regression per key per class
+  // Fits P(class|key,growth) = a + b*growth using Gaussian kernel weights
+  // This captures the TREND of how class probabilities change with growth rate,
+  // rather than just averaging nearby points (kernel approach).
+  const model = {};
+  for (const key of allKeys) {
+    const result = new Float64Array(6);
+    for (let c = 0; c < 6; c++) {
+      let S = 0, Sg = 0, Sgg = 0, Sp = 0, Sgp = 0;
+      for (const rn of trainRounds) {
+        const b = perRoundBuckets[String(rn)]?.[key];
+        if (!b) continue;
+        const gr = growthRates[String(rn)] || 0.15;
+        const p = b.sum[c] / b.count;
+        const diff = gr - targetGrowth;
+        const gw = Math.exp(-(diff * diff) / (2 * sigma * sigma));
+        const w = gw * b.count; // weight by cell count for statistical reliability
+        S += w; Sg += w * gr; Sgg += w * gr * gr;
+        Sp += w * p; Sgp += w * gr * p;
+      }
+      if (S < 1e-15) { result[c] = 1 / 6; continue; }
+      const det = S * Sgg - Sg * Sg;
+      if (Math.abs(det) < 1e-15 * S * S) {
+        // Degenerate (all points at same growth rate): fall back to weighted mean
+        result[c] = Math.max(0, Sp / S);
+        continue;
+      }
+      const a = (Sp * Sgg - Sgp * Sg) / det;
+      const bCoeff = (S * Sgp - Sg * Sp) / det;
+      result[c] = Math.max(0, a + bCoeff * targetGrowth);
+    }
+    let sum = 0;
+    for (let c = 0; c < 6; c++) sum += result[c];
+    if (sum > 0) model[key] = Array.from(result, v => v / sum);
+    else model[key] = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+  }
+
+  // Uniform fallback for missing keys
+  const uniformModel = {};
+  for (const key of allKeys) {
+    const num = new Float64Array(6);
+    let den = 0;
+    for (const rn of trainRounds) {
+      const b = perRoundBuckets[String(rn)]?.[key];
+      if (!b) continue;
+      for (let c = 0; c < 6; c++) num[c] += b.sum[c];
+      den += b.count;
+    }
+    if (den > 0) uniformModel[key] = Array.from(num, v => v / den);
+  }
 
   const settPos = new Set();
   for (const s of settlements) settPos.add(s.y * W + s.x);
 
-  // Gaussian-weighted round importance at multiple bandwidths
-  var bandwidths = [0.04, 0.08, 0.15];
-  var perBwWeights = bandwidths.map(function(bw) {
-    var weights = {};
-    var wSum = 0;
-    for (var i = 0; i < allRoundNums.length; i++) {
-      var r = allRoundNums[i];
-      var diff = (growthRates[String(r)] || 0.15) - targetGrowth;
-      var w = Math.exp(-diff * diff / (2 * bw * bw));
-      weights[r] = w;
-      wSum += w;
-    }
-    for (var i = 0; i < allRoundNums.length; i++) {
-      weights[allRoundNums[i]] /= wSum;
-    }
-    return weights;
-  });
+  const pred = [];
+  for (let y = 0; y < H; y++) {
+    const row = [];
+    for (let x = 0; x < W; x++) {
+      const key = getFeatureKey(initGrid, settPos, y, x);
 
-  // Precompute weighted distributions per key per bandwidth
-  var allKeys = {};
-  for (var i = 0; i < allRoundNums.length; i++) {
-    var buckets = perRoundBuckets[allRoundNums[i]];
-    if (!buckets) continue;
-    for (var k in buckets) allKeys[k] = true;
-  }
-
-  var bwModels = bandwidths.map(function(bw, bi) {
-    var weights = perBwWeights[bi];
-    var model = {};
-    for (var key in allKeys) {
-      var dist = [0,0,0,0,0,0];
-      var tw = 0;
-      var tc = 0;
-      for (var i = 0; i < allRoundNums.length; i++) {
-        var r = allRoundNums[i];
-        var buckets = perRoundBuckets[r];
-        if (!buckets || !buckets[key] || buckets[key].count === 0) continue;
-        var b = buckets[key];
-        var w = weights[r];
-        for (var c = 0; c < 6; c++) dist[c] += w * (b.sum[c] / b.count);
-        tw += w;
-        tc += b.count;
+      let prior = model[key] || uniformModel[key];
+      if (!prior) {
+        const fb = key.slice(0, -1);
+        prior = model[fb] || uniformModel[fb] || [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
       }
-      if (tw > 1e-10) {
-        for (var c = 0; c < 6; c++) dist[c] /= tw;
-        model[key] = { dist: dist, count: tc };
-      }
-    }
-    return model;
-  });
+      prior = [...prior];
 
-  var pred = [];
-  for (var y = 0; y < H; y++) {
-    var row = [];
-    for (var x = 0; x < W; x++) {
-      var key = getFeatureKey(initGrid, settPos, y, x);
-      var fbKey = key.slice(0, -1);
-
-      // Ensemble across bandwidths
-      var ensemble = [0,0,0,0,0,0];
-      var ensembleN = 0;
-
-      for (var bi = 0; bi < bwModels.length; bi++) {
-        var model = bwModels[bi];
-        var spec = model[key] || null;
-        var coarse = model[fbKey] || null;
-
-        var cellDist = null;
-        if (spec && coarse) {
-          // Count-adaptive blend: more specific data -> trust specific more
-          var blendAlpha = Math.min(0.85, 0.3 + 0.55 * Math.min(1, spec.count / 20));
-          cellDist = [0,0,0,0,0,0];
-          for (var c = 0; c < 6; c++) {
-            cellDist[c] = blendAlpha * spec.dist[c] + (1 - blendAlpha) * coarse.dist[c];
-          }
-        } else if (spec) {
-          cellDist = spec.dist;
-        } else if (coarse) {
-          cellDist = coarse.dist;
-        }
-
-        if (cellDist) {
-          for (var c = 0; c < 6; c++) ensemble[c] += cellDist[c];
-          ensembleN++;
-        }
-      }
-
-      var prior;
-      if (ensembleN > 0) {
-        prior = [0,0,0,0,0,0];
-        for (var c = 0; c < 6; c++) prior[c] = ensemble[c] / ensembleN;
-      } else {
-        prior = [1/6,1/6,1/6,1/6,1/6,1/6];
-      }
-
-      // Adaptive floor: low entropy cells get tiny floor, high entropy get larger
-      var entropy = 0;
-      for (var c = 0; c < 6; c++) {
-        if (prior[c] > 1e-10) entropy -= prior[c] * Math.log(prior[c]);
-      }
-      var adaptiveFloor = floor * (0.05 + 0.95 * entropy / Math.log(6));
-
-      var floored = [0,0,0,0,0,0];
-      var sum = 0;
-      for (var c = 0; c < 6; c++) {
-        floored[c] = Math.max(prior[c], adaptiveFloor);
-        sum += floored[c];
-      }
-      var result = [0,0,0,0,0,0];
-      for (var c = 0; c < 6; c++) result[c] = floored[c] / sum;
-
-      row.push(result);
+      const floored = prior.map(v => Math.max(v, floor));
+      const sum = floored.reduce((a, b) => a + b, 0);
+      row.push(floored.map(v => v / sum));
     }
     pred.push(row);
   }

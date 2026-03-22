@@ -1,0 +1,13 @@
+{
+  "pow": 0.5,
+  "minN": 1,
+  "fl": 0.00005,
+  "alpha": 0.05,
+  "keyIndices": [
+    4
+  ],
+  "ws": [
+    1
+  ],
+  "label": "minN=1"
+}
