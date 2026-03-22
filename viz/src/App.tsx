@@ -33,8 +33,8 @@ const VP_GRID = [
 ]
 
 // ── Model building (mirrors solver_clean.js) ──
-const N_PRIOR = 12 // Bayesian prior weight (optimized: 15 was too conservative, 4 too aggressive)
-const FLOOR = 0.0001 // optimized from 0.001
+const N_PRIOR = 4 // Bayesian prior weight (live optimizer R23: nPrior=4 beat 12)
+const FLOOR = 0.00001 // live optimizer R23: floor=0.00001 beat 0.0001
 const K_NEAREST = 4 // optimized from 3
 
 function mergeBuckets(buckets: PerRoundBuckets, roundNums: number[]): Record<string, number[]> {
@@ -91,7 +91,7 @@ function estimateGrowthFromVP(
   return dynamicCount > 0 ? settCount / dynamicCount : 0.15
 }
 
-const SIGMA = 0.05 // gaussian width for growth-rate weighting
+const SIGMA = 0.03 // live optimizer R23: sigma=0.03 beat 0.05
 
 // Weighted merge: all rounds contribute, weighted by growth rate similarity
 function weightedMergeBuckets(buckets: PerRoundBuckets, growthRates: GrowthRates, targetGrowth: number, excludeRound?: number): Record<string, number[]> {

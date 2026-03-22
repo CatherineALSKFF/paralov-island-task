@@ -1,1 +1,1 @@
-{"status":"running","iteration":43,"bestConfig":{"sigma":0.03,"floor":0.00001,"nPrior":4},"bestScore":52.796705596154084,"vpCount":45,"remaining":"10m","updatedAt":"2026-03-22T13:49:51.945Z"}
+{"status":"running","iteration":50,"bestConfig":{"sigma":0.03,"floor":0.00001,"nPrior":4},"bestScore":52.796705596154084,"vpCount":45,"remaining":"5m","updatedAt":"2026-03-22T13:54:07.211Z"}
